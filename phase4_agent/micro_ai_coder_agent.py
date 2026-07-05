@@ -89,8 +89,8 @@ class MicroAICoderAgent:
     
     def generate_project(self, user_prompt):
         """
-        Generate a complete project structure with streaming output.
-        Yields (file_path, code, stream) tuples.
+        Generate a complete project structure with organized output.
+        Returns a dictionary with project metadata and statistics.
         """
         # Create project directory
         project_dir = self.create_project_directory()
@@ -132,8 +132,6 @@ class MicroAICoderAgent:
             # Display progress
             rel_path = file_path.relative_to(project_dir)
             print(f"✅ {rel_path} ({len(code)} chars)")
-            
-            yield (str(rel_path), code)
         
         # Create metadata
         metadata = {
