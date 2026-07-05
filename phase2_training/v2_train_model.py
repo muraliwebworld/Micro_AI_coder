@@ -35,15 +35,16 @@ MODELS_DIR.mkdir(parents=True, exist_ok=True)
 LOGS_DIR.mkdir(parents=True, exist_ok=True)
 
 # Model Hyperparameters
-BATCH_SIZE = 16
-BLOCK_SIZE = 512          # Context window (~180 lines of code)
+BATCH_SIZE = 4            # Reduced from 16 for GPU memory
+BLOCK_SIZE = 256          # Reduced from 512 for GPU memory
 MAX_ITERS = 5000
 LEARNING_RATE = 5e-4
-N_EMBD = 256              # Embedding dimension
-N_HEAD = 8                # Number of attention heads
-N_LAYER = 8               # Number of transformer layers
+N_EMBD = 128              # Reduced from 256 for GPU memory
+N_HEAD = 4                # Reduced from 8 for GPU memory
+N_LAYER = 4               # Reduced from 8 for GPU memory
 DROPOUT = 0.1
 GRAD_CLIP = 1.0
+USE_GRADIENT_CHECKPOINTING = True  # Save memory during training
 
 # Tokenization
 TOKENIZER_NAME = "cl100k_base"
@@ -143,6 +144,14 @@ class TransformerBlock(nn.Module):
         self.dropout = nn.Dropout(dropout)
     
     def forward(self, x, mask=None):
+        if USE_GRADIENT_CHECKPOINTING and self.training:
+            return torch.utils.checkpoint.checkpoint(
+                self._forward_impl, x, mask, use_reentrant=False
+            )
+        else:
+            return self._forward_impl(x, mask)
+    
+    def _forward_impl(self, x, mask=None):
         x = x + self.dropout(self.attn(self.ln1(x), mask))
         x = x + self.dropout(self.mlp(self.ln2(x)))
         return x
@@ -349,6 +358,11 @@ def train():
         torch.nn.utils.clip_grad_norm_(model.parameters(), GRAD_CLIP)
         optimizer.step()
         scheduler.step()
+        
+        # Clear GPU cache periodically
+        if (iter + 1) % 100 == 0:
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
         
         # Logging
         if (iter + 1) % 500 == 0 or iter == 0:
