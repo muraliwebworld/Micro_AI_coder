@@ -105,50 +105,126 @@ def get_technologies():
     
     return techs
 
+def get_suggested_files_from_model(project_description, technologies):
+    """Ask Ollama model to suggest relevant file names for the project"""
+    print_step("Getting AI-suggested file names from model...")
+    
+    tech_str = ", ".join(technologies)
+    suggestion_prompt = f"""Based on this project description, suggest what files should be created.
+    
+Project: {project_description}
+Technologies: {tech_str}
+
+Output format - One file per line with this format:
+FILENAME | PURPOSE | TYPE
+
+Where TYPE is: react, node, php, sql, config, utils, styles, or other
+
+Examples:
+weather.js | Main weather data fetching module | node
+Dashboard.jsx | Main dashboard component | react
+api.php | WordPress REST API routes | php
+schema.sql | Database schema | sql
+
+Suggest 5-8 files that would be needed. Output ONLY the file suggestions, no explanation."""
+    
+    payload = {
+        "model": MODEL_NAME,
+        "prompt": suggestion_prompt,
+        "stream": False,
+        "temperature": 0.7
+    }
+    
+    try:
+        response = requests.post(OLLAMA_URL, json=payload, timeout=60)
+        if response.status_code == 200:
+            response_data = response.json()
+            suggestions_text = response_data.get("response", "").strip()
+            
+            # Parse suggestions
+            suggested_files = []
+            for line in suggestions_text.split('\n'):
+                line = line.strip()
+                if not line or line.startswith('#'):
+                    continue
+                
+                parts = [p.strip() for p in line.split('|')]
+                if len(parts) >= 3:
+                    filename = parts[0]
+                    purpose = parts[1]
+                    file_type = parts[2].lower()
+                    
+                    # Validate file type
+                    if file_type not in ['react', 'node', 'php', 'sql', 'config', 'utils', 'styles', 'other']:
+                        file_type = 'other'
+                    
+                    suggested_files.append({
+                        "name": filename,
+                        "type": file_type,
+                        "description": purpose
+                    })
+            
+            if suggested_files:
+                print_success(f"Model suggested {len(suggested_files)} files")
+                return suggested_files
+            else:
+                print_warning("No valid suggestions from model, using defaults")
+                return []
+    except Exception as e:
+        print_warning(f"Error getting suggestions: {str(e)}")
+        return []
+
 def generate_multi_file_project(project_description, technologies):
     """Generate a complete multi-file project based on description and tech stack"""
     
-    # Determine file types based on technologies
-    file_specs = []
+    # Try to get AI-suggested file names first
+    suggested_files = get_suggested_files_from_model(project_description, technologies)
     
-    if "react" in technologies:
-        file_specs.extend([
-            {"name": "HomePage.jsx", "type": "react", "description": "Home page component with overview and navigation"},
-            {"name": "ListPage.jsx", "type": "react", "description": "List/grid view of items"},
-            {"name": "DetailPage.jsx", "type": "react", "description": "Detail view for individual item with related info"},
-            {"name": "FormPage.jsx", "type": "react", "description": "Form to create or edit item"},
-            {"name": "App.jsx", "type": "react", "description": "Main app component with routing"}
-        ])
-    
-    if "express" in technologies or "node" in technologies:
-        file_specs.extend([
-            {"name": "server.js", "type": "node", "description": "Express server setup with routes"},
-            {"name": "routes.js", "type": "node", "description": "API route handlers and endpoints"},
-            {"name": "middleware.js", "type": "node", "description": "Authentication and validation middleware"},
-            {"name": "database.js", "type": "node", "description": "Database connection and setup"}
-        ])
-    
-    if "php" in technologies and "wordpress" not in technologies:
-        file_specs.extend([
-            {"name": "index.php", "type": "php", "description": "Main entry point with routing"},
-            {"name": "api.php", "type": "php", "description": "API endpoints and controllers"},
-            {"name": "config.php", "type": "php", "description": "Configuration and database setup"}
-        ])
-    
-    if "wordpress" in technologies:
-        file_specs.extend([
-            {"name": "plugin.php", "type": "php", "description": "WordPress plugin main file"},
-            {"name": "wp-api-endpoint.php", "type": "php", "description": "WordPress REST API endpoints"},
-            {"name": "admin-page.php", "type": "php", "description": "WordPress admin dashboard page"}
-        ])
-    
-    if "mysql" in technologies or "postgresql" in technologies:
-        db_type = "MySQL" if "mysql" in technologies else "PostgreSQL"
-        file_specs.append({
-            "name": "schema.sql",
-            "type": "sql",
-            "description": f"{db_type} database schema with tables and relationships"
-        })
+    # Use suggested files if available, otherwise use predefined specs
+    if suggested_files:
+        file_specs = suggested_files
+    else:
+        # Determine file types based on technologies
+        file_specs = []
+        
+        if "react" in technologies:
+            file_specs.extend([
+                {"name": "HomePage.jsx", "type": "react", "description": "Home page component with overview and navigation"},
+                {"name": "ListPage.jsx", "type": "react", "description": "List/grid view of items"},
+                {"name": "DetailPage.jsx", "type": "react", "description": "Detail view for individual item with related info"},
+                {"name": "FormPage.jsx", "type": "react", "description": "Form to create or edit item"},
+                {"name": "App.jsx", "type": "react", "description": "Main app component with routing"}
+            ])
+        
+        if "express" in technologies or "node" in technologies:
+            file_specs.extend([
+                {"name": "server.js", "type": "node", "description": "Express server setup with routes"},
+                {"name": "routes.js", "type": "node", "description": "API route handlers and endpoints"},
+                {"name": "middleware.js", "type": "node", "description": "Authentication and validation middleware"},
+                {"name": "database.js", "type": "node", "description": "Database connection and setup"}
+            ])
+        
+        if "php" in technologies and "wordpress" not in technologies:
+            file_specs.extend([
+                {"name": "index.php", "type": "php", "description": "Main entry point with routing"},
+                {"name": "api.php", "type": "php", "description": "API endpoints and controllers"},
+                {"name": "config.php", "type": "php", "description": "Configuration and database setup"}
+            ])
+        
+        if "wordpress" in technologies:
+            file_specs.extend([
+                {"name": "plugin.php", "type": "php", "description": "WordPress plugin main file"},
+                {"name": "wp-api-endpoint.php", "type": "php", "description": "WordPress REST API endpoints"},
+                {"name": "admin-page.php", "type": "php", "description": "WordPress admin dashboard page"}
+            ])
+        
+        if "mysql" in technologies or "postgresql" in technologies:
+            db_type = "MySQL" if "mysql" in technologies else "PostgreSQL"
+            file_specs.append({
+                "name": "schema.sql",
+                "type": "sql",
+                "description": f"{db_type} database schema with tables and relationships"
+            })
     
     print(f"\n{'─'*80}")
     print(f"📋 Project Structure: {len(file_specs)} files to generate")
@@ -220,6 +296,68 @@ Requirements:
 - Schema should be 50-100 lines
 - Do NOT include markdown backticks or explanation text
 - Output ONLY the SQL code"""
+        
+        elif file_type == "config":
+            file_prompt = f"""Create a configuration file named {file_name}.
+Project context: {project_description}
+Purpose: {description}
+Requirements:
+- Include all necessary configuration settings
+- Use appropriate format (JSON, YAML, .env, or config format)
+- Add comments explaining each setting
+- Include sensible defaults
+- Code should be 20-50 lines
+- Do NOT include markdown backticks or explanation text
+- Output ONLY the configuration code"""
+        
+        elif file_type == "utils":
+            file_prompt = f"""Create a utility/helper file named {file_name}.
+Project context: {project_description}
+Purpose: {description}
+Requirements:
+- Create reusable utility functions or helpers
+- Include proper error handling
+- Add comprehensive comments
+- Export functions properly for the technology stack
+- Code should be 30-80 lines
+- Do NOT include markdown backticks or explanation text
+- Output ONLY the code"""
+        
+        elif file_type == "styles":
+            file_prompt = f"""Create a styles file named {file_name}.
+Project context: {project_description}
+Purpose: {description}
+Requirements:
+- Use modern CSS or CSS-in-JS
+- Include responsive design considerations
+- Add comments explaining style sections
+- Follow best practices for organization
+- Code should be 30-80 lines
+- Do NOT include markdown backticks or explanation text
+- Output ONLY the styles code"""
+        
+        elif file_type == "other":
+            file_prompt = f"""Create a {file_name} file.
+Project context: {project_description}
+Purpose: {description}
+Requirements:
+- Make it functional and complete
+- Use best practices for the detected technology
+- Add helpful comments
+- Code should be 40-100 lines
+- Do NOT include markdown backticks or explanation text
+- Output ONLY the code"""
+        
+        else:
+            # Default to generic prompt for unknown types
+            file_prompt = f"""Create a {file_name} file.
+Project context: {project_description}
+Purpose: {description}
+Requirements:
+- Make it functional and complete
+- Add helpful comments
+- Do NOT include markdown backticks or explanation text
+- Output ONLY the code"""
         
         payload = {
             "model": MODEL_NAME,
