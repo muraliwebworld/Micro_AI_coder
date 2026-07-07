@@ -186,24 +186,24 @@ def interactive_agent():
     while True:
         print("\n" + "="*80)
         print("MENU:")
-        print("  1. Generate new project")
-        print("  2. Get help with prompt format")
-        print("  3. View output directory")
-        print("  4. Exit")
+        print("  1️⃣  Generate new project")
+        print("  2️⃣  Get help with prompt format")
+        print("  3️⃣  View output directory")
+        print("  4️⃣  Exit")
         print("="*80)
-        print("\n➤ Choice: ", end="")
+        print("\n➤ Enter choice (1, 2, 3, or 4): ", end="")
         
         choice = input().strip()
         
         if choice == '1':
             print("\n" + "─"*80)
-            print("Enter your project description:")
-            print("Examples:")
-            print("  - 'Create React app with homepage, about, contact pages and Express backend'")
-            print("  - 'Build social media feed with posts, comments, and MySQL database'")
-            print("  - 'Create e-commerce site with product page, cart, checkout, and WordPress backend'")
+            print("💬 Describe your project (this is where you paste your full prompt):")
             print("─"*80)
-            print("\n➤ Your prompt: ", end="")
+            print("\nExamples:")
+            print("  • 'Create React app with homepage, about, contact pages and Express backend'")
+            print("  • 'Build social media feed with posts, comments, and MySQL database'")
+            print("  • 'Create membership club site with login, register, members list, and footer'")
+            print("\n➤ Your project description: ", end="")
             
             user_prompt = input().strip()
             
@@ -301,7 +301,9 @@ Note: Model will generate appropriate file types automatically:
             break
         
         else:
-            print_error("Invalid choice, try again")
+            print_error(f"Invalid choice '{choice}' - please enter 1, 2, 3, or 4")
+            print("💡 Tip: Type the NUMBER (1-4), NOT your prompt text")
+
 
 def main():
     """Main entry point"""
