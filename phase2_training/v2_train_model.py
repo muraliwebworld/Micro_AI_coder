@@ -25,7 +25,7 @@ import numpy as np
 DATASETS_DIR = Path(__file__).parent.parent / "datasets"
 MODELS_DIR = Path(__file__).parent.parent / "models"
 LOGS_DIR = Path(__file__).parent.parent / "logs"
-INPUT_JSONL = DATASETS_DIR / "generated_projects.jsonl"
+INPUT_JSONL = DATASETS_DIR / "generated_projects_final.jsonl"
 OUTPUT_MODEL = MODELS_DIR / "tiny_code_model.pt"
 OUTPUT_CONFIG = MODELS_DIR / "model_config.json"
 TRAINING_LOG = LOGS_DIR / "training_log.jsonl"
@@ -35,13 +35,13 @@ MODELS_DIR.mkdir(parents=True, exist_ok=True)
 LOGS_DIR.mkdir(parents=True, exist_ok=True)
 
 # Model Hyperparameters
-BATCH_SIZE = 4            # Reduced from 16 for GPU memory
+BATCH_SIZE = 8            # Reduced from 16 for GPU memory
 BLOCK_SIZE = 256          # Reduced from 512 for GPU memory
-MAX_ITERS = 5000
+MAX_ITERS = 8000
 LEARNING_RATE = 5e-4
-N_EMBD = 128              # Reduced from 256 for GPU memory
-N_HEAD = 4                # Reduced from 8 for GPU memory
-N_LAYER = 4               # Reduced from 8 for GPU memory
+N_EMBD = 256              # Reduced from 256 for GPU memory
+N_HEAD = 8                # Reduced from 8 for GPU memory
+N_LAYER = 8               # Reduced from 8 for GPU memory
 DROPOUT = 0.1
 GRAD_CLIP = 1.0
 USE_GRADIENT_CHECKPOINTING = True  # Save memory during training

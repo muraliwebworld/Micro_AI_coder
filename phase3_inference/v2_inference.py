@@ -109,11 +109,22 @@ class CodeGenerator:
     def parse_user_prompt(self, user_prompt):
         """
         Parse user prompt to extract:
+        - Project type (ecommerce, cms, api, standard)
         - React page names (HomePage, ContactPage, etc.)
         - Backend type (express, wordpress, mysql)
         - Database type (mysql, postgresql)
+        - Styling framework (tailwind, bootstrap)
         """
         prompt_lower = user_prompt.lower()
+        
+        # Detect project type
+        project_type = 'standard'
+        if any(x in prompt_lower for x in ['ecommerce', 'shopping', 'store', 'cart', 'product']):
+            project_type = 'ecommerce'
+        elif any(x in prompt_lower for x in ['cms', 'blog', 'content', 'article', 'post']):
+            project_type = 'cms'
+        elif any(x in prompt_lower for x in ['api', 'rest api', 'microservice', 'backend']):
+            project_type = 'api'
         
         # File type keywords
         file_types = []
@@ -130,11 +141,12 @@ class CodeGenerator:
         if not file_types:
             file_types = ['react', 'node', 'sql']
         
-        # Extract page names
+        # Extract page names with improved patterns - includes multi-page detection
         page_patterns = [
             r'(\w+)\s+page',
             r'(\w+)\s+screen',
-            r'pages[:\s]+([a-z0-9\s,]+)',
+            r'pages?[:\s]+([a-z0-9\s,and]+)',
+            r'with\s+([a-z0-9\s,]+)\s+pages?',
         ]
         
         page_names = set()
@@ -143,10 +155,20 @@ class CodeGenerator:
             for match in matches:
                 if isinstance(match, tuple):
                     match = match[0]
-                # Clean and capitalize
-                name = match.strip().replace(',', '').replace('and', '').strip()
-                if len(name) > 2:
-                    page_names.add(name.capitalize())
+                # Split by commas, 'and', and multiple spaces - properly handle word 'and'
+                parts = re.split(r',\s*|\s+and\s+|\s{2,}', match.strip())
+                for part in parts:
+                    name = part.strip()
+                    # Only add valid page names (2+ letters, no special chars)
+                    if len(name) > 2 and name.isalpha() and name != 'with' and name != 'css':
+                        page_names.add(name.capitalize())
+        
+        # Extract styling framework
+        styling = 'tailwind'
+        if 'bootstrap' in prompt_lower:
+            styling = 'bootstrap'
+        elif 'css' in prompt_lower or 'style' in prompt_lower:
+            styling = 'css'
         
         # Extract backend choice
         backend = 'express'
@@ -164,7 +186,9 @@ class CodeGenerator:
             'file_types': file_types,
             'page_names': list(page_names) if page_names else ['HomePage'],
             'backend': backend,
-            'database': database
+            'database': database,
+            'project_type': project_type,
+            'styling': styling
         }
     
     def generate_token_stream(self, prompt, max_tokens=500, temperature=0.7, top_k=50):
@@ -202,8 +226,8 @@ class CodeGenerator:
                 if '<|file_end|>' in token_str:
                     break
     
-    def generate_single_file(self, file_name, file_type, purpose, temperature=0.6):
-        """Generate code for a single file with specific type"""
+    def generate_single_file(self, file_name, file_type, purpose, temperature=0.6, styling='tailwind', project_type='standard'):
+        """Generate code for a single file with specific type, styling, and project template"""
         
         # Rich template-based generation with production patterns
         templates = {
@@ -615,6 +639,45 @@ class {Path(file_name).stem} {{
 export default {Path(file_name).stem};
 """
     
+    def generate_routing_file(self, page_names):
+        """Generate React Router configuration with navigation based on page names"""
+        imports_str = "\n".join([f"import {page}Page from './pages/{page}Page';" for page in page_names])
+        nav_links = "\n          ".join([f'<Link to="/{page.lower()}" className="hover:text-gray-300">{page}</Link>' for page in page_names])
+        routes_str = "\n        ".join([f"<Route path='/{page.lower()}' element={{<{page}Page />}} />" for page in page_names])
+        
+        return f"""import {{ BrowserRouter as Router, Routes, Route, Link }} from 'react-router-dom';
+import HomePage from './pages/HomePage';
+{imports_str}
+
+export default function App() {{
+  return (
+    <Router>
+      <nav className="bg-gradient-to-r from-blue-600 to-blue-800 text-white p-4 shadow-lg">
+        <div className="max-w-6xl mx-auto flex items-center gap-8">
+          <h1 className="text-2xl font-bold">MyApp</h1>
+          <div className="flex gap-6 ml-auto">
+            <Link to="/" className="hover:text-blue-200 transition">Home</Link>
+            {nav_links}
+          </div>
+        </div>
+      </nav>
+      
+      <main className="min-h-screen bg-gray-50">
+        <Routes>
+          <Route path="/" element={{<HomePage />}} />
+          {routes_str}
+        </Routes>
+      </main>
+      
+      <footer className="bg-gray-900 text-white p-8 mt-12">
+        <div className="max-w-6xl mx-auto text-center">
+          <p>&copy; 2026 MyApp. All rights reserved.</p>
+        </div>
+      </footer>
+    </Router>
+  );
+}}"""
+
     def generate_multi_file_project(self, user_prompt):
         """
         Generate multiple files for a complete project.
@@ -626,6 +689,8 @@ export default {Path(file_name).stem};
         page_names = spec['page_names']
         backend = spec['backend']
         database = spec['database']
+        project_type = spec['project_type']
+        styling = spec['styling']
         
         files_to_generate = []
         
@@ -677,8 +742,13 @@ export default {Path(file_name).stem};
             file_type = file_spec['type']
             purpose = file_spec['purpose']
             
-            code = self.generate_single_file(file_name, file_type, purpose)
+            code = self.generate_single_file(file_name, file_type, purpose, styling=styling, project_type=project_type)
             yield (file_name, code)
+        
+        # Generate smart routing file if React with multiple pages
+        if 'react' in file_types and len(page_names) > 1:
+            routing_code = self.generate_routing_file(page_names)
+            yield ('App.jsx', routing_code)
 
 # ============================================================================
 # INTERACTIVE CLI

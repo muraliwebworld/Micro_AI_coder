@@ -1,14 +1,14 @@
 {
-  "n_embd": 128,
-  "n_head": 4,
-  "n_layer": 4,
+  "n_embd": 256,
+  "n_head": 8,
+  "n_layer": 8,
   "block_size": 256,
   "vocab_size": 100277,
   "tokenizer": "cl100k_base",
   "dropout": 0.1,
-  "trained_at": "2026-07-05T14:12:11.173305",
-  "max_iters": 5000,
-  "batch_size": 4,
+  "trained_at": "2026-07-07T13:01:27.994114",
+  "max_iters": 8000,
+  "batch_size": 8,
   "learning_rate": 0.0005,
-  "total_parameters": 26597301
+  "total_parameters": 57826229
 }
