@@ -229,9 +229,42 @@ class CodeGenerator:
                     break
     
     def generate_single_file(self, file_name, file_type, purpose, temperature=0.6, styling='tailwind', project_type='standard'):
-        """Generate code for a single file with specific type, styling, and project template"""
+        """Generate code for a single file using the trained model, with template fallback"""
         
-        # Rich template-based generation with production patterns
+        # First, try to generate using the trained model
+        print_step(f"🤖 Generating {file_type} code with model...")
+        
+        # Create contextual prompt for the model
+        model_prompt = f"{file_type} {file_name}\n{purpose}\n{styling} {project_type}"
+        
+        # Generate code using the model
+        try:
+            generated_code = ""
+            token_count = 0
+            max_tokens = 2000  # Limit generation length
+            
+            for token in self.generate_token_stream(model_prompt, max_tokens=max_tokens, temperature=temperature):
+                generated_code += token
+                token_count += 1
+                
+                # Stop if we generated enough code
+                if len(generated_code) > 200 and ('<|file_end|>' in generated_code or token_count > max_tokens):
+                    break
+            
+            # If model generated substantial code (>150 chars), use it
+            if len(generated_code.strip()) > 150:
+                # Clean up the generated code
+                if '<|file_end|>' in generated_code:
+                    generated_code = generated_code.split('<|file_end|>')[0]
+                
+                print_success(f"✓ Model generated {len(generated_code)} characters")
+                return generated_code.strip()
+            else:
+                print_step(f"⚠ Model generated insufficient code ({len(generated_code)} chars), using template")
+        except Exception as e:
+            print_step(f"⚠ Model generation error: {str(e)}, falling back to template")
+        
+        # Rich template-based generation with production patterns (FALLBACK)
         templates = {
             'react': f"""import React, {{ useState, useEffect, useCallback, useContext }} from 'react';
 import axios from 'axios';

@@ -225,12 +225,38 @@ def interactive_agent():
                 print(f"   - Total Characters: {result['total_chars']:,}")
                 print(f"   - Backend: {result['metadata']['backend'].upper()}")
                 print(f"   - Database: {result['metadata']['database'].upper()}")
+                
+                # Build dynamic directory structure based on actual files
+                structure_lines = [f"   {result['project_dir'].name}/"]
+                dir_map = {
+                    'frontend': 'React components',
+                    'backend': 'Express, SQL schemas, PHP files',
+                    'config': 'Environment files'
+                }
+                
+                dirs_with_files = set()
+                for file_path in result['project_dir'].rglob('*'):
+                    if file_path.is_file() and file_path.name != 'metadata.json':
+                        # Find the top-level directory
+                        rel_path = file_path.relative_to(result['project_dir'])
+                        top_dir = rel_path.parts[0] if rel_path.parts else None
+                        if top_dir:
+                            dirs_with_files.add(top_dir)
+                
+                # Only show directories that have files
+                dirs_list = sorted(dirs_with_files)
+                for i, dir_name in enumerate(dirs_list):
+                    is_last = (i == len(dirs_list) - 1)
+                    prefix = "└── " if is_last else "├── "
+                    description = dir_map.get(dir_name, dir_name)
+                    structure_lines.append(f"   {prefix}{dir_name}/     ({description})")
+                
+                # Add metadata.json at the end
+                structure_lines.append(f"   └── metadata.json (Project metadata)")
+                
                 print(f"\n📂 Structure:")
-                print(f"   {result['project_dir'].name}/")
-                print(f"   ├── frontend/     (React components)")
-                print(f"   ├── backend/      (Express, SQL schemas)")
-                print(f"   ├── config/       (Environment files)")
-                print(f"   └── metadata.json (Project metadata)")
+                for line in structure_lines:
+                    print(line)
                 print("="*80)
                 
             except Exception as e:
