@@ -628,6 +628,151 @@ class {Path(file_name).stem}Service {{
 ?>"""
         }
         
+        # Special handling for Node.js files - return appropriate template
+        if file_type == 'node':
+            if 'middleware' in file_name.lower():
+                # Middleware-specific template
+                return f"""// {purpose}
+// Middleware functions for request processing
+
+// Error handling middleware
+const asyncHandler = (fn) => (req, res, next) => {{
+  Promise.resolve(fn(req, res, next)).catch(next);
+}};
+
+// Validation middleware
+const validateInput = (schema) => (req, res, next) => {{
+  // Basic input validation
+  if (!req.body || Object.keys(req.body).length === 0) {{
+    return res.status(400).json({{ error: 'Request body required' }});
+  }}
+  next();
+}};
+
+// Authentication middleware
+const authenticateToken = (req, res, next) => {{
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+  
+  if (!token) {{
+    return res.status(401).json({{ error: 'Access token required' }});
+  }}
+  
+  // Token validation logic here
+  next();
+}};
+
+// Rate limiting middleware
+const rateLimit = (limit = 100, windowMs = 15 * 60 * 1000) => {{
+  let requests = {{}};
+  
+  return (req, res, next) => {{
+    const key = req.ip;
+    const now = Date.now();
+    
+    if (!requests[key]) {{
+      requests[key] = [];
+    }}
+    
+    // Clean old requests
+    requests[key] = requests[key].filter(time => now - time < windowMs);
+    
+    if (requests[key].length >= limit) {{
+      return res.status(429).json({{ error: 'Too many requests' }});
+    }}
+    
+    requests[key].push(now);
+    next();
+  }};
+}};
+
+// CORS configuration
+const corsOptions = {{
+  origin: process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:3000'],
+  credentials: true,
+  optionsSuccessStatus: 200
+}};
+
+// Logging middleware
+const requestLogger = (req, res, next) => {{
+  console.log(`${{new Date().toISOString()}} - ${{req.method}} ${{req.path}}`);
+  next();
+}};
+
+module.exports = {{
+  asyncHandler,
+  validateInput,
+  authenticateToken,
+  rateLimit,
+  corsOptions,
+  requestLogger
+}};"""
+            
+            elif 'routes' in file_name.lower():
+                # Routes-specific template
+                return f"""// {purpose}
+// RESTful API route definitions
+
+const express = require('express');
+const router = express.Router();
+const {{ asyncHandler, validateInput, authenticateToken }} = require('./middleware');
+
+// List all items
+router.get('/api/items', asyncHandler(async (req, res) => {{
+  try {{
+    const limit = req.query.limit || 10;
+    const offset = req.query.offset || 0;
+    
+    res.json({{
+      success: true,
+      data: [],
+      pagination: {{ limit, offset }}
+    }});
+  }} catch (error) {{
+    res.status(500).json({{ success: false, error: error.message }});
+  }}
+}});
+
+// Create new item
+router.post('/api/items', validateInput(), asyncHandler(async (req, res) => {{
+  try {{
+    const newItem = {{
+      id: Date.now(),
+      ...req.body,
+      createdAt: new Date()
+    }};
+    
+    res.status(201).json({{ success: true, data: newItem }});
+  }} catch (error) {{
+    res.status(500).json({{ success: false, error: error.message }});
+  }}
+}});
+
+// Get item by ID
+router.get('/api/items/:id', asyncHandler(async (req, res) => {{
+  const {{ id }} = req.params;
+  res.json({{ success: true, data: {{ id }} }});
+}});
+
+// Update item
+router.put('/api/items/:id', authenticateToken, asyncHandler(async (req, res) => {{
+  const {{ id }} = req.params;
+  const updated = {{ id, ...req.body, updatedAt: new Date() }};
+  res.json({{ success: true, data: updated }});
+}});
+
+// Delete item
+router.delete('/api/items/:id', authenticateToken, asyncHandler(async (req, res) => {{
+  const {{ id }} = req.params;
+  res.json({{ success: true, message: `Item ${{id}} deleted` }});
+}});
+
+module.exports = router;"""
+            
+            else:
+                # server.js - main application file
+                return templates[file_type]
+        
         # Return template or fallback
         if file_type in templates:
             return templates[file_type]
