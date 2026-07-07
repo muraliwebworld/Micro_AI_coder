@@ -309,7 +309,7 @@ const {Path(file_name).stem} = () => {{
 
 export default {Path(file_name).stem};""",
             
-            'node': f"""const express = require('express');
+            'node': """const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
 
@@ -319,87 +319,87 @@ const PORT = process.env.PORT || 5000;
 // Middleware
 app.use(cors());
 app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({{ extended: true }}));
+app.use(bodyParser.urlencoded({ extended: true }));
 
 // Error handling middleware
-const asyncHandler = (fn) => (req, res, next) => {{
+const asyncHandler = (fn) => (req, res, next) => {
   Promise.resolve(fn(req, res, next)).catch(next);
-}};
+};
 
 // Validation middleware
-const validateInput = (schema) => (req, res, next) => {{
+const validateInput = (schema) => (req, res, next) => {
   // Basic validation
-  if (!req.body || Object.keys(req.body).length === 0) {{
-    return res.status(400).json({{ error: 'Request body required' }});
-  }}
+  if (!req.body || Object.keys(req.body).length === 0) {
+    return res.status(400).json({ error: 'Request body required' });
+  }
   next();
-}};
+};
 
 // Health check endpoint
-app.get('/health', (req, res) => {{
-  res.json({{ status: 'Server is running', timestamp: new Date() }});
-}});
+app.get('/health', (req, res) => {
+  res.json({ status: 'Server is running', timestamp: new Date() });
+});
 
-// Routes for {purpose}
-app.get('/api/items', asyncHandler(async (req, res) => {{
-  try {{
+// Routes for Express server setup
+app.get('/api/items', asyncHandler(async (req, res) => {
+  try {
     const limit = req.query.limit || 10;
     const offset = req.query.offset || 0;
     
-    res.json({{
+    res.json({
       success: true,
       data: [],
-      pagination: {{ limit, offset }}
-    }});
-  }} catch (error) {{
-    res.status(500).json({{ success: false, error: error.message }});
-  }}
-}});
+      pagination: { limit, offset }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+}));
 
-app.post('/api/items', validateInput(), asyncHandler(async (req, res) => {{
-  try {{
-    const newItem = {{
+app.post('/api/items', validateInput(), asyncHandler(async (req, res) => {
+  try {
+    const newItem = {
       id: Date.now(),
       ...req.body,
       createdAt: new Date()
-    }};
+    };
     
-    res.status(201).json({{ success: true, data: newItem }});
-  }} catch (error) {{
-    res.status(500).json({{ success: false, error: error.message }});
-  }}
-}});
+    res.status(201).json({ success: true, data: newItem });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+}));
 
-app.get('/api/items/:id', asyncHandler(async (req, res) => {{
-  const {{ id }} = req.params;
-  res.json({{ success: true, data: {{ id }} }});
-}});
+app.get('/api/items/:id', asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  res.json({ success: true, data: { id } });
+}));
 
-app.put('/api/items/:id', asyncHandler(async (req, res) => {{
-  const {{ id }} = req.params;
-  const updated = {{ id, ...req.body, updatedAt: new Date() }};
-  res.json({{ success: true, data: updated }});
-}});
+app.put('/api/items/:id', asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const updated = { id, ...req.body, updatedAt: new Date() };
+  res.json({ success: true, data: updated });
+}));
 
-app.delete('/api/items/:id', asyncHandler(async (req, res) => {{
-  const {{ id }} = req.params;
-  res.json({{ success: true, message: `Item ${{id}} deleted` }});
-}});
+app.delete('/api/items/:id', asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  res.json({ success: true, message: `Item ${id} deleted` });
+}));
 
 // Error handler
-app.use((err, req, res, next) => {{
+app.use((err, req, res, next) => {
   console.error(err);
-  res.status(500).json({{ 
+  res.status(500).json({ 
     success: false, 
     error: err.message || 'Internal server error' 
-  }});
-}});
+  });
+});
 
 // Start server
-app.listen(PORT, () => {{
-  console.log(`✅ Server running on http://localhost:${{PORT}}`);
-  console.log(`📝 Health check: http://localhost:${{PORT}}/health`);
-}});
+app.listen(PORT, () => {
+  console.log(`✅ Server running on http://localhost:${PORT}`);
+  console.log(`📝 Health check: http://localhost:${PORT}/health`);
+});
 
 module.exports = app;""",
             
@@ -631,8 +631,8 @@ class {Path(file_name).stem}Service {{
         # Special handling for Node.js files - return appropriate template
         if file_type == 'node':
             if 'middleware' in file_name.lower():
-                # Middleware-specific template
-                return f"""// {purpose}
+                # Middleware-specific template - pure functions, no routes
+                middleware_template = f"""// {purpose}
 // Middleware functions for request processing
 
 // Error handling middleware
@@ -640,9 +640,8 @@ const asyncHandler = (fn) => (req, res, next) => {{
   Promise.resolve(fn(req, res, next)).catch(next);
 }};
 
-// Validation middleware
-const validateInput = (schema) => (req, res, next) => {{
-  // Basic input validation
+// Validation middleware  
+const validateInput = (req, res, next) => {{
   if (!req.body || Object.keys(req.body).length === 0) {{
     return res.status(400).json({{ error: 'Request body required' }});
   }}
@@ -653,34 +652,25 @@ const validateInput = (schema) => (req, res, next) => {{
 const authenticateToken = (req, res, next) => {{
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
-  
   if (!token) {{
     return res.status(401).json({{ error: 'Access token required' }});
   }}
-  
-  // Token validation logic here
   next();
 }};
 
 // Rate limiting middleware
 const rateLimit = (limit = 100, windowMs = 15 * 60 * 1000) => {{
   let requests = {{}};
-  
   return (req, res, next) => {{
     const key = req.ip;
     const now = Date.now();
-    
     if (!requests[key]) {{
       requests[key] = [];
     }}
-    
-    // Clean old requests
     requests[key] = requests[key].filter(time => now - time < windowMs);
-    
     if (requests[key].length >= limit) {{
       return res.status(429).json({{ error: 'Too many requests' }});
     }}
-    
     requests[key].push(now);
     next();
   }};
@@ -707,67 +697,67 @@ module.exports = {{
   corsOptions,
   requestLogger
 }};"""
+                return middleware_template
             
             elif 'routes' in file_name.lower():
-                # Routes-specific template
-                return f"""// {purpose}
+                # Routes-specific template - router definitions
+                routes_template = """// API route handlers
 // RESTful API route definitions
 
 const express = require('express');
 const router = express.Router();
-const {{ asyncHandler, validateInput, authenticateToken }} = require('./middleware');
+const { asyncHandler, validateInput, authenticateToken } = require('./middleware');
 
 // List all items
-router.get('/api/items', asyncHandler(async (req, res) => {{
-  try {{
+router.get('/api/items', asyncHandler(async (req, res) => {
+  try {
     const limit = req.query.limit || 10;
     const offset = req.query.offset || 0;
-    
-    res.json({{
+    res.json({
       success: true,
       data: [],
-      pagination: {{ limit, offset }}
-    }});
-  }} catch (error) {{
-    res.status(500).json({{ success: false, error: error.message }});
-  }}
-}});
+      pagination: { limit, offset }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+}));
 
 // Create new item
-router.post('/api/items', validateInput(), asyncHandler(async (req, res) => {{
-  try {{
-    const newItem = {{
+router.post('/api/items', validateInput(), asyncHandler(async (req, res) => {
+  try {
+    const newItem = {
       id: Date.now(),
       ...req.body,
       createdAt: new Date()
-    }};
-    
-    res.status(201).json({{ success: true, data: newItem }});
-  }} catch (error) {{
-    res.status(500).json({{ success: false, error: error.message }});
-  }}
-}});
+    };
+    res.status(201).json({ success: true, data: newItem });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+}));
 
 // Get item by ID
-router.get('/api/items/:id', asyncHandler(async (req, res) => {{
-  const {{ id }} = req.params;
-  res.json({{ success: true, data: {{ id }} }});
-}});
+router.get('/api/items/:id', asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  res.json({ success: true, data: { id } });
+}));
 
 // Update item
-router.put('/api/items/:id', authenticateToken, asyncHandler(async (req, res) => {{
-  const {{ id }} = req.params;
-  const updated = {{ id, ...req.body, updatedAt: new Date() }};
-  res.json({{ success: true, data: updated }});
-}});
+router.put('/api/items/:id', authenticateToken, asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const updated = { id, ...req.body, updatedAt: new Date() };
+  res.json({ success: true, data: updated });
+}));
 
 // Delete item
-router.delete('/api/items/:id', authenticateToken, asyncHandler(async (req, res) => {{
-  const {{ id }} = req.params;
-  res.json({{ success: true, message: `Item ${{id}} deleted` }});
-}});
+router.delete('/api/items/:id', authenticateToken, asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  res.json({ success: true, message: `Item ${id} deleted` });
+}));
 
 module.exports = router;"""
+                return routes_template
             
             else:
                 # server.js - main application file
