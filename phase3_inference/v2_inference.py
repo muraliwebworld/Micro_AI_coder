@@ -312,11 +312,14 @@ export default {Path(file_name).stem};""",
             'node': f"""const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
-const router = express.Router();
+
+const app = express();
+const PORT = process.env.PORT || 5000;
 
 // Middleware
-router.use(cors());
-router.use(bodyParser.json());
+app.use(cors());
+app.use(bodyParser.json());
+app.use(bodyParser.urlencoded({{ extended: true }}));
 
 // Error handling middleware
 const asyncHandler = (fn) => (req, res, next) => {{
@@ -332,8 +335,13 @@ const validateInput = (schema) => (req, res, next) => {{
   next();
 }};
 
+// Health check endpoint
+app.get('/health', (req, res) => {{
+  res.json({{ status: 'Server is running', timestamp: new Date() }});
+}});
+
 // Routes for {purpose}
-router.get('/api/items', asyncHandler(async (req, res) => {{
+app.get('/api/items', asyncHandler(async (req, res) => {{
   try {{
     const limit = req.query.limit || 10;
     const offset = req.query.offset || 0;
@@ -348,7 +356,7 @@ router.get('/api/items', asyncHandler(async (req, res) => {{
   }}
 }});
 
-router.post('/api/items', validateInput(), asyncHandler(async (req, res) => {{
+app.post('/api/items', validateInput(), asyncHandler(async (req, res) => {{
   try {{
     const newItem = {{
       id: Date.now(),
@@ -362,24 +370,24 @@ router.post('/api/items', validateInput(), asyncHandler(async (req, res) => {{
   }}
 }});
 
-router.get('/api/items/:id', asyncHandler(async (req, res) => {{
+app.get('/api/items/:id', asyncHandler(async (req, res) => {{
   const {{ id }} = req.params;
   res.json({{ success: true, data: {{ id }} }});
 }});
 
-router.put('/api/items/:id', asyncHandler(async (req, res) => {{
+app.put('/api/items/:id', asyncHandler(async (req, res) => {{
   const {{ id }} = req.params;
   const updated = {{ id, ...req.body, updatedAt: new Date() }};
   res.json({{ success: true, data: updated }});
 }});
 
-router.delete('/api/items/:id', asyncHandler(async (req, res) => {{
+app.delete('/api/items/:id', asyncHandler(async (req, res) => {{
   const {{ id }} = req.params;
   res.json({{ success: true, message: `Item ${{id}} deleted` }});
 }});
 
 // Error handler
-router.use((err, req, res, next) => {{
+app.use((err, req, res, next) => {{
   console.error(err);
   res.status(500).json({{ 
     success: false, 
@@ -387,7 +395,13 @@ router.use((err, req, res, next) => {{
   }});
 }});
 
-module.exports = router;""",
+// Start server
+app.listen(PORT, () => {{
+  console.log(`✅ Server running on http://localhost:${{PORT}}`);
+  console.log(`📝 Health check: http://localhost:${{PORT}}/health`);
+}});
+
+module.exports = app;""",
             
             'sql': f"""-- {purpose}
 -- Core tables with relationships and constraints
