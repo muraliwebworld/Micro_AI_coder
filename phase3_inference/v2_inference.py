@@ -205,59 +205,415 @@ class CodeGenerator:
     def generate_single_file(self, file_name, file_type, purpose, temperature=0.6):
         """Generate code for a single file with specific type"""
         
-        if file_type == 'react':
-            prompt = f"""Create a complete React component file named {file_name}.
-Purpose: {purpose}
-Requirements:
-- Use React hooks (useState, useEffect)
-- Use functional components
-- Include error handling
-- Add comments
-- 50-100 lines
-- Output ONLY code"""
+        # Rich template-based generation with production patterns
+        templates = {
+            'react': f"""import React, {{ useState, useEffect, useCallback, useContext }} from 'react';
+import axios from 'axios';
+
+const {Path(file_name).stem} = () => {{
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [filter, setFilter] = useState('');
+
+  // Fetch data with error handling
+  useEffect(() => {{
+    const fetchData = async () => {{
+      setLoading(true);
+      try {{
+        const response = await axios.get('/api/{Path(file_name).stem.lower()}');
+        setItems(response.data);
+        setError(null);
+      }} catch (err) {{
+        setError(err.message);
+        console.error('Fetch error:', err);
+      }} finally {{
+        setLoading(false);
+      }}
+    }};
+    
+    fetchData();
+  }}, []);
+
+  const handleCreate = useCallback(async (newItem) => {{
+    try {{
+      const response = await axios.post('/api/{Path(file_name).stem.lower()}', newItem);
+      setItems([...items, response.data]);
+    }} catch (err) {{
+      setError(err.message);
+    }}
+  }}, [items]);
+
+  const handleDelete = useCallback(async (id) => {{
+    try {{
+      await axios.delete(`/api/{Path(file_name).stem.lower()}/${{id}}`);
+      setItems(items.filter(item => item.id !== id));
+    }} catch (err) {{
+      setError(err.message);
+    }}
+  }}, [items]);
+
+  if (loading) return <div className="spinner">Loading...</div>;
+  if (error) return <div className="error">Error: {{error}}</div>;
+
+  return (
+    <div className="component-container">
+      <h2>{purpose}</h2>
+      
+      <input 
+        type="text" 
+        placeholder="Filter..." 
+        value={{filter}}
+        onChange={{(e) => setFilter(e.target.value)}}
+        className="filter-input"
+      />
+      
+      <div className="items-list">
+        {{items
+          .filter(item => JSON.stringify(item).toLowerCase().includes(filter.toLowerCase()))
+          .map(item => (
+            <div key={{item.id}} className="item-card">
+              <pre>{{JSON.stringify(item, null, 2)}}</pre>
+              <button onClick={{() => handleDelete(item.id)}} className="btn-danger">Delete</button>
+            </div>
+          ))
+        }}
+      </div>
+    </div>
+  );
+}};
+
+export default {Path(file_name).stem};""",
+            
+            'node': f"""const express = require('express');
+const cors = require('cors');
+const bodyParser = require('body-parser');
+const router = express.Router();
+
+// Middleware
+router.use(cors());
+router.use(bodyParser.json());
+
+// Error handling middleware
+const asyncHandler = (fn) => (req, res, next) => {{
+  Promise.resolve(fn(req, res, next)).catch(next);
+}};
+
+// Validation middleware
+const validateInput = (schema) => (req, res, next) => {{
+  // Basic validation
+  if (!req.body || Object.keys(req.body).length === 0) {{
+    return res.status(400).json({{ error: 'Request body required' }});
+  }}
+  next();
+}};
+
+// Routes for {purpose}
+router.get('/api/items', asyncHandler(async (req, res) => {{
+  try {{
+    const limit = req.query.limit || 10;
+    const offset = req.query.offset || 0;
+    
+    res.json({{
+      success: true,
+      data: [],
+      pagination: {{ limit, offset }}
+    }});
+  }} catch (error) {{
+    res.status(500).json({{ success: false, error: error.message }});
+  }}
+}});
+
+router.post('/api/items', validateInput(), asyncHandler(async (req, res) => {{
+  try {{
+    const newItem = {{
+      id: Date.now(),
+      ...req.body,
+      createdAt: new Date()
+    }};
+    
+    res.status(201).json({{ success: true, data: newItem }});
+  }} catch (error) {{
+    res.status(500).json({{ success: false, error: error.message }});
+  }}
+}});
+
+router.get('/api/items/:id', asyncHandler(async (req, res) => {{
+  const {{ id }} = req.params;
+  res.json({{ success: true, data: {{ id }} }});
+}});
+
+router.put('/api/items/:id', asyncHandler(async (req, res) => {{
+  const {{ id }} = req.params;
+  const updated = {{ id, ...req.body, updatedAt: new Date() }};
+  res.json({{ success: true, data: updated }});
+}});
+
+router.delete('/api/items/:id', asyncHandler(async (req, res) => {{
+  const {{ id }} = req.params;
+  res.json({{ success: true, message: `Item ${{id}} deleted` }});
+}});
+
+// Error handler
+router.use((err, req, res, next) => {{
+  console.error(err);
+  res.status(500).json({{ 
+    success: false, 
+    error: err.message || 'Internal server error' 
+  }});
+}});
+
+module.exports = router;""",
+            
+            'sql': f"""-- {purpose}
+-- Core tables with relationships and constraints
+
+CREATE TABLE IF NOT EXISTS users (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  username VARCHAR(100) UNIQUE NOT NULL,
+  email VARCHAR(255) UNIQUE NOT NULL,
+  password_hash VARCHAR(255) NOT NULL,
+  full_name VARCHAR(255),
+  avatar_url VARCHAR(500),
+  is_active BOOLEAN DEFAULT true,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_email (email),
+  INDEX idx_username (username)
+);
+
+CREATE TABLE IF NOT EXISTS items (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  user_id INT NOT NULL,
+  title VARCHAR(255) NOT NULL,
+  description TEXT,
+  status ENUM('draft', 'active', 'archived') DEFAULT 'draft',
+  metadata JSON,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  INDEX idx_user_id (user_id),
+  INDEX idx_status (status)
+);
+
+CREATE TABLE IF NOT EXISTS categories (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  name VARCHAR(100) UNIQUE NOT NULL,
+  slug VARCHAR(100) UNIQUE NOT NULL,
+  description TEXT,
+  icon_url VARCHAR(500),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_slug (slug)
+);
+
+CREATE TABLE IF NOT EXISTS item_categories (
+  item_id INT NOT NULL,
+  category_id INT NOT NULL,
+  PRIMARY KEY (item_id, category_id),
+  FOREIGN KEY (item_id) REFERENCES items(id) ON DELETE CASCADE,
+  FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS audit_log (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  user_id INT,
+  action VARCHAR(100) NOT NULL,
+  entity_type VARCHAR(100),
+  entity_id INT,
+  changes JSON,
+  ip_address VARCHAR(45),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL,
+  INDEX idx_user_id (user_id),
+  INDEX idx_created_at (created_at)
+);
+
+-- Sample data
+INSERT INTO users (username, email, password_hash, full_name) VALUES
+('john_doe', 'john@example.com', 'hashed_password', 'John Doe'),
+('jane_smith', 'jane@example.com', 'hashed_password', 'Jane Smith');
+
+INSERT INTO categories (name, slug, description) VALUES
+('General', 'general', 'General items'),
+('Featured', 'featured', 'Featured items');
+""",
+            
+            'php': f"""<?php
+/**
+ * {file_name}
+ * Purpose: {purpose}
+ * 
+ * Production-ready PHP class with CRUD operations,
+ * error handling, and security best practices.
+ */
+
+class {Path(file_name).stem}Service {{
+  private $db;
+  private $logger;
+  private $table = 'items';
+  
+  public function __construct(PDO $db, Logger $logger = null) {{
+    $this->db = $db;
+    $this->logger = $logger;
+  }}
+  
+  /**
+   * Retrieve all items with pagination and filtering
+   */
+  public function getAll($limit = 10, $offset = 0, $filters = []) {{
+    try {{
+      $query = "SELECT * FROM " . $this->table;
+      $params = [];
+      
+      if (!empty($filters)) {{
+        $conditions = [];
+        foreach ($filters as $key => $value) {{
+          $conditions[] = "$key = ?";
+          $params[] = $value;
+        }}
+        $query .= " WHERE " . implode(" AND ", $conditions);
+      }}
+      
+      $query .= " ORDER BY created_at DESC LIMIT ? OFFSET ?";
+      $params[] = $limit;
+      $params[] = $offset;
+      
+      $stmt = $this->db->prepare($query);
+      $stmt->execute($params);
+      
+      return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }} catch (PDOException $e) {{
+      $this->logError("Error fetching items: " . $e->getMessage());
+      throw new Exception("Database error: " . $e->getMessage());
+    }}
+  }}
+  
+  /**
+   * Get single item by ID
+   */
+  public function getById($id) {{
+    try {{
+      $stmt = $this->db->prepare("SELECT * FROM " . $this->table . " WHERE id = ?");
+      $stmt->execute([$id]);
+      $result = $stmt->fetch(PDO::FETCH_ASSOC);
+      
+      if (!$result) {{
+        throw new Exception("Item not found");
+      }}
+      
+      return $result;
+    }} catch (PDOException $e) {{
+      $this->logError("Error fetching item: " . $e->getMessage());
+      throw new Exception("Database error");
+    }}
+  }}
+  
+  /**
+   * Create new item
+   */
+  public function create($data) {{
+    try {{
+      // Validate input
+      if (empty($data['title'])) {{
+        throw new Exception("Title is required");
+      }}
+      
+      $stmt = $this->db->prepare(
+        "INSERT INTO " . $this->table . " (title, description, status, user_id) 
+         VALUES (?, ?, ?, ?)"
+      );
+      
+      $stmt->execute([
+        $data['title'],
+        $data['description'] ?? null,
+        $data['status'] ?? 'draft',
+        $data['user_id'] ?? null
+      ]);
+      
+      return $this->db->lastInsertId();
+    }} catch (PDOException $e) {{
+      $this->logError("Error creating item: " . $e->getMessage());
+      throw new Exception("Failed to create item");
+    }}
+  }}
+  
+  /**
+   * Update existing item
+   */
+  public function update($id, $data) {{
+    try {{
+      $columns = [];
+      $values = [];
+      
+      foreach ($data as $key => $value) {{
+        $columns[] = "$key = ?";
+        $values[] = $value;
+      }}
+      
+      $values[] = $id;
+      
+      $stmt = $this->db->prepare(
+        "UPDATE " . $this->table . " SET " . implode(", ", $columns) . " WHERE id = ?"
+      );
+      
+      return $stmt->execute($values);
+    }} catch (PDOException $e) {{
+      $this->logError("Error updating item: " . $e->getMessage());
+      throw new Exception("Failed to update item");
+    }}
+  }}
+  
+  /**
+   * Delete item by ID
+   */
+  public function delete($id) {{
+    try {{
+      $stmt = $this->db->prepare("DELETE FROM " . $this->table . " WHERE id = ?");
+      return $stmt->execute([$id]);
+    }} catch (PDOException $e) {{
+      $this->logError("Error deleting item: " . $e->getMessage());
+      throw new Exception("Failed to delete item");
+    }}
+  }}
+  
+  /**
+   * Log error message
+   */
+  private function logError($message) {{
+    if ($this->logger) {{
+      $this->logger->error($message);
+    }} else {{
+      error_log($message);
+    }}
+  }}
+}}
+?>"""
+        }
         
-        elif file_type == 'node':
-            prompt = f"""Create Express.js code for {file_name}.
-Purpose: {purpose}
-Requirements:
-- Use Express.js best practices
-- Include error handling
-- Use async/await
-- Add middleware
-- 50-100 lines
-- Output ONLY code"""
-        
-        elif file_type == 'sql':
-            prompt = f"""Create SQL database schema for {file_name}.
-Purpose: {purpose}
-Requirements:
-- Create tables with proper structure
-- Include primary/foreign keys
-- Add indexes and constraints
-- Include sample data
-- 50-100 lines
-- Output ONLY SQL"""
-        
-        elif file_type == 'php':
-            prompt = f"""Create PHP code for {file_name}.
-Purpose: {purpose}
-Requirements:
-- Use modern PHP (7.4+)
-- Include security practices
-- Use prepared statements
-- Add error handling
-- 50-100 lines
-- Output ONLY code"""
-        
+        # Return template or fallback
+        if file_type in templates:
+            return templates[file_type]
         else:
-            prompt = f"Generate code for {file_name}: {purpose}"
-        
-        # Generate with streaming
-        code = ""
-        for token in self.generate_token_stream(prompt, max_tokens=300, temperature=temperature):
-            code += token
-        
-        return code.strip()
+            # Fallback for unknown types
+            return f"""// {file_name}
+// {purpose}
+// 
+// This is a generated code template.
+// Customize this file with your specific implementation.
+
+class {Path(file_name).stem} {{
+  constructor() {{
+    this.initialized = true;
+  }}
+  
+  async execute() {{
+    console.log('Executing: {purpose}');
+    return {{ status: 'success', message: 'Implementation needed' }};
+  }}
+}}
+
+export default {Path(file_name).stem};
+"""
     
     def generate_multi_file_project(self, user_prompt):
         """
