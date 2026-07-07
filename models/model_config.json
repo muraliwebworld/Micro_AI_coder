@@ -6,8 +6,8 @@
   "vocab_size": 100277,
   "tokenizer": "cl100k_base",
   "dropout": 0.1,
-  "trained_at": "2026-07-07T13:01:27.994114",
-  "max_iters": 8000,
+  "trained_at": "2026-07-07T16:48:14.904236",
+  "max_iters": 6000,
   "batch_size": 8,
   "learning_rate": 0.0005,
   "total_parameters": 57826229

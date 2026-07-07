@@ -242,21 +242,48 @@ def generate_multi_file_project(project_description, technologies):
         
         # Build specific prompt for this file
         if file_type == "react":
-            file_prompt = f"""Create a complete React component file named {file_name}.
+            file_prompt = f"""Create a React component file named {file_name}.
 Project context: {project_description}
-Purpose: {description}
-Requirements:
-- Use React hooks (useState, useEffect, useContext)
-- Use functional components
-- Include proper error handling
-- Add comments explaining the code
-- Make it production-ready
-- Code should be 50-100 lines
-- Do NOT include markdown backticks or explanation text
-- Output ONLY the code"""
+Component purpose: {description}
+
+STRICT TEMPLATE - FOLLOW EXACTLY:
+
+import React, {{ useState, useEffect }} from 'react';
+
+export default function {file_name.replace('.jsx', '').replace('.js', '')}() {{
+  // State declarations
+  const [state, setState] = useState(null);
+
+  // Effects
+  useEffect(() => {{
+    // Initialize component
+  }}, []);
+
+  // Handlers
+
+  // Render
+  return (
+    <div className="{file_name.replace('.jsx', '').lower()}">
+      {{/* Component JSX here */}}
+    </div>
+  );
+}}
+
+REQUIREMENTS:
+- Must start with import statements
+- Must have export default function
+- Must have proper JSX return statement
+- Use React hooks (useState, useEffect)
+- Add meaningful comments
+- Include error boundaries or error handling
+- Make it 60-100 lines of functional code
+- NO markdown backticks or code fences
+- Output ONLY valid JSX/React code
+
+DO NOT output explanation text, only code."""
         
         elif file_type == "node":
-            file_prompt = f"""Create a complete Node.js/Express file named {file_name}.
+            file_prompt = f"""Create a Node.js/Express file named {file_name}.
 Project context: {project_description}
 Purpose: {description}
 Requirements:
@@ -270,18 +297,49 @@ Requirements:
 - Output ONLY the code"""
         
         elif file_type == "php":
-            file_prompt = f"""Create a complete PHP file named {file_name}.
+            # Special handling for WordPress plugins
+            if "wordpress" in technologies and ("plugin" in file_name.lower() or "wp-" in file_name.lower()):
+                file_prompt = f"""Create a complete WordPress plugin PHP file named {file_name}.
+Project context: {project_description}
+Purpose: {description}
+
+STRICT REQUIREMENTS - START PHP CODE WITH THIS HEADER:
+<?php
+/*
+Plugin Name: {project_description.split()[0]} Plugin
+Description: {description}
+Version: 1.0.0
+Author: Developer
+*/
+
+// Add your WordPress plugin code here
+
+DO NOT use triple backticks (```) - output ONLY pure PHP code.
+Include:
+- Proper WordPress hook usage (add_action, add_filter)
+- Security nonces and capability checks
+- Proper plugin structure and organization
+- Custom post types, taxonomies, or API endpoints as needed
+- Comments explaining each section
+- 60-100 lines of functional code
+
+END REQUIREMENTS
+
+Output ONLY the PHP code, no explanations."""
+            else:
+                file_prompt = f"""Create a complete PHP file named {file_name}.
 Project context: {project_description}
 Purpose: {description}
 Requirements:
 - Use modern PHP (7.4+)
+- Start with <?php tag
 - Include security best practices (sanitization, validation)
 - Use prepared statements for database queries
-- Add error handling
-- Include comments explaining the code
+- Add error handling and try-catch blocks
+- Include meaningful comments
 - Code should be 50-100 lines
-- Do NOT include markdown backticks or explanation text
-- Output ONLY the code"""
+- Do NOT include markdown backticks or code fences (```)
+- Output ONLY valid PHP code with no explanation"""
         
         elif file_type == "sql":
             file_prompt = f"""Create complete SQL database schema file named {file_name}.
@@ -375,21 +433,72 @@ Requirements:
                 generated_code = response_data.get("response", "").strip()
                 
                 if generated_code:
-                    # Clean up common markdown formatting
-                    if generated_code.startswith("```"):
-                        lines = generated_code.split("\n")
-                        # Skip first line (```python, ```javascript, etc.)
-                        generated_code = "\n".join(lines[1:])
-                    if generated_code.endswith("```"):
-                        lines = generated_code.split("\n")
-                        # Remove last line (```)
-                        generated_code = "\n".join(lines[:-1])
+                    # Aggressive cleanup of markdown and code fence formatting
+                    # Remove triple backticks with language specifiers
+                    generated_code = generated_code.replace("```php", "").replace("```javascript", "").replace("```jsx", "").replace("```node", "").replace("```sql", "")
+                    generated_code = generated_code.replace("```json", "").replace("```yaml", "").replace("```bash", "")
+                    generated_code = generated_code.replace("```", "")
                     
-                    generated_project.append({
-                        "filename": file_name,
-                        "code": generated_code
-                    })
-                    print(f"    ✅ Generated {file_name} ({len(generated_code)} chars)")
+                    # Remove common wrapping patterns
+                    lines = generated_code.split("\n")
+                    lines = [line for line in lines if line.strip()]  # Remove empty lines temporarily
+                    
+                    # Reconstruct with preserved structure
+                    generated_code = "\n".join(lines).strip()
+                    
+                    # Validate the output
+                    is_valid = False
+                    validation_reason = ""
+                    
+                    if file_type == "react" and len(generated_code) > 80:
+                        # For React, MUST contain proper component structure
+                        has_import = "import" in generated_code and "react" in generated_code.lower()
+                        has_export = "export" in generated_code
+                        has_function = "function" in generated_code or "const" in generated_code
+                        has_jsx = "return" in generated_code and ("<" in generated_code and ">" in generated_code)
+                        has_hooks = "useState" in generated_code or "useEffect" in generated_code
+                        
+                        is_valid = has_import and has_export and has_function and has_jsx
+                        if not is_valid:
+                            validation_reason = f"Missing required patterns - import:{has_import} export:{has_export} function:{has_function} jsx:{has_jsx}"
+                    elif file_type == "php" and len(generated_code) > 50:
+                        # For PHP, should start with <?php or contain PHP-like content
+                        is_valid = "<?php" in generated_code or "function" in generated_code or "class" in generated_code or "$" in generated_code
+                        if not is_valid:
+                            validation_reason = "Missing PHP opening tag or PHP syntax"
+                    elif file_type == "node" and len(generated_code) > 40:
+                        # For Node, should contain require/import or express patterns
+                        is_valid = "require" in generated_code or "import" in generated_code or "app." in generated_code or "module" in generated_code
+                        if not is_valid:
+                            validation_reason = "Missing Node.js/Express patterns"
+                    elif file_type == "sql" and len(generated_code) > 40:
+                        # For SQL, should contain CREATE, INSERT, SELECT, etc.
+                        is_valid = "CREATE" in generated_code.upper() or "INSERT" in generated_code.upper() or "SELECT" in generated_code.upper()
+                        if not is_valid:
+                            validation_reason = "Missing SQL keywords"
+                    else:
+                        # For other types, check it's not gibberish
+                        # Gibberish typically has very repetitive words
+                        words = generated_code.split()
+                        if words:
+                            unique_words = len(set(words))
+                            word_ratio = unique_words / len(words) if words else 0
+                            is_valid = len(generated_code) > 40 and word_ratio > 0.3  # At least 30% unique words
+                            if not is_valid:
+                                validation_reason = f"Too repetitive (unique word ratio: {word_ratio:.2%})"
+                    
+                    if is_valid:
+                        generated_project.append({
+                            "filename": file_name,
+                            "code": generated_code
+                        })
+                        print(f"    ✅ Generated {file_name} ({len(generated_code)} chars)")
+                    else:
+                        print_warning(f"Invalid/corrupted response for {file_name}.")
+                        if validation_reason:
+                            print_warning(f"   Reason: {validation_reason}")
+                        print_warning(f"   Length: {len(generated_code)} chars")
+                        print_warning(f"   Preview: {generated_code[:80].replace(chr(10), ' ')}...")
                 else:
                     print_warning(f"Empty response for {file_name}")
             else:

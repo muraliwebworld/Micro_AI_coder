@@ -1,0 +1,13 @@
+{"iter": 1, "train_loss": 11.4396, "val_loss": 11.4098, "lr": 0.0005}
+{"iter": 500, "train_loss": 3.1529, "val_loss": 3.7784, "lr": 0.00049148}
+{"iter": 1000, "train_loss": 2.3637, "val_loss": 3.333, "lr": 0.00046651}
+{"iter": 1500, "train_loss": 0.4869, "val_loss": 1.4653, "lr": 0.00042678}
+{"iter": 2000, "train_loss": 0.086, "val_loss": 0.8543, "lr": 0.000375}
+{"iter": 2500, "train_loss": 0.0265, "val_loss": 0.6823, "lr": 0.0003147}
+{"iter": 3000, "train_loss": 0.0161, "val_loss": 0.642, "lr": 0.00025}
+{"iter": 3500, "train_loss": 0.0113, "val_loss": 0.6026, "lr": 0.0001853}
+{"iter": 4000, "train_loss": 0.0105, "val_loss": 0.6267, "lr": 0.000125}
+{"iter": 4500, "train_loss": 0.0098, "val_loss": 0.6328, "lr": 7.322e-05}
+{"iter": 5000, "train_loss": 0.0098, "val_loss": 0.5899, "lr": 3.349e-05}
+{"iter": 5500, "train_loss": 0.0108, "val_loss": 0.633, "lr": 8.52e-06}
+{"iter": 6000, "train_loss": 0.0096, "val_loss": 0.5557, "lr": 0.0}
