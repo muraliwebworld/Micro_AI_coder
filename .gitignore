@@ -126,7 +126,7 @@ dmypy.json
 models/*.pt
 models/*.pth
 datasets/generated_projects.jsonl
-datasets/generated_projects.txt
+datasets/generated_projects*
 logs/training_log.jsonl
 outputs/
 .DS_Store
