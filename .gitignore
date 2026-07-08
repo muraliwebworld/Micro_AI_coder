@@ -143,3 +143,5 @@ outputs/
 # OS
 .DS_Store
 Thumbs.db
+reactjs_projects_dataset.jsonl
+*.jsonl
