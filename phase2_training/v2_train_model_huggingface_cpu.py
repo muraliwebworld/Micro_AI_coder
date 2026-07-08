@@ -40,24 +40,24 @@ MODELS_DIR.mkdir(parents=True, exist_ok=True)
 LOGS_DIR.mkdir(parents=True, exist_ok=True)
 
 # CPU-OPTIMIZED HYPERPARAMETERS (AGGRESSIVE ANTI-OVERFITTING)
-BATCH_SIZE = 3              # ⬇️  Even smaller (3 instead of 4) - tighter gradient updates
+BATCH_SIZE = 4              # ⬇️  Even smaller (3 instead of 4) - tighter gradient updates
 BLOCK_SIZE = 128             # ⬇️  Shorter sequences (was 96) - less context corruption
-MAX_ITERS = 3500            # ⬇️  Half iterations (was 6000) - stop before overfitting
+MAX_ITERS = 6000            # ⬇️  Half iterations (was 6000) - stop before overfitting
 LEARNING_RATE = 5e-4        # ⬇️  Lower LR (was 1e-3) - slower, more stable learning
-N_EMBD = 96                 # ⬇️  Smaller (was 128) - 25% smaller model
-N_HEAD = 3                  # ⬇️  Fewer heads (was 4) - less capacity
-N_LAYER = 6                 # ⬇️  Fewer layers (was 8) - lighter model
+N_EMBD = 128                 # ⬇️  Smaller (was 128) - 25% smaller model
+N_HEAD = 4                  # ⬇️  Fewer heads (was 4) - less capacity
+N_LAYER = 8                 # ⬇️  Fewer layers (was 8) - lighter model
 DROPOUT = 0.15              # ⬆️  Much higher dropout (was 0.1) - 50% more regularization
 GRAD_CLIP = 0.3             # ⬇️  Tighter gradient clipping (was 0.5)
 TOKENIZER_NAME = "cl100k_base"
 DEVICE = 'cpu'
 
 # CPU Training improvements (MAXIMUM ANTI-OVERFITTING)
-EVAL_INTERVAL = 250         # ⬆️  Evaluate very frequently (every 250 steps)
+EVAL_INTERVAL = 150         # ⬆️  Evaluate very frequently (every 250 steps)
 WARMUP_STEPS = 400          # ⬆️  Longer warmup (was 300) - better stability
 WEIGHT_DECAY = 0.02         # ⬆️  Double L2 regularization (was 0.01) - strong penalty
 SAVE_INTERVAL = 500         # ⬇️  Save even less frequently
-PATIENCE = 5                # ⬇️  Very early stopping (was 8) - stop immediately if plateau
+PATIENCE = 8                # ⬇️  Very early stopping (was 8) - stop immediately if plateau
 
 # CPU-specific settings
 NUM_THREADS = os.cpu_count() or 4  # Use all CPU cores
@@ -220,7 +220,7 @@ def load_and_tokenize():
     line_num = 0
     
     # Progress tracking
-    max_samples = 8000  # ⬇️ Focus on first 3000 (highest quality from cleaned dataset)
+    max_samples = 18000  # ⬇️ Focus on first 3000 (highest quality from cleaned dataset)
     
     try:
         with open(INPUT_JSONL, 'r', encoding='utf-8') as f:
