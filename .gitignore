@@ -145,3 +145,4 @@ outputs/
 Thumbs.db
 reactjs_projects_dataset.jsonl
 *.jsonl
+paraquet/

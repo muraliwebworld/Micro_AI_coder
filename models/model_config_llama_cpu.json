@@ -6,8 +6,8 @@
   "block_size": 128,
   "tokenizer": "cl100k_base",
   "total_params": 26747392,
-  "best_val_loss": 2.0138700803120932,
-  "training_iterations": 4950,
+  "best_val_loss": 2.1794300079345703,
+  "training_iterations": 3300,
   "source": "huggingface_dataset_cpu",
   "device": "cpu",
   "batch_size": 4

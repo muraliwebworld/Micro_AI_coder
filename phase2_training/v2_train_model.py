@@ -18,7 +18,7 @@ from datetime import datetime
 DATASETS_DIR = Path(__file__).parent.parent / "datasets"
 MODELS_DIR = Path(__file__).parent.parent / "models"
 LOGS_DIR = Path(__file__).parent.parent / "logs"
-INPUT_JSONL = DATASETS_DIR / "generated_projects_final.jsonl" # Matches Phase 1
+INPUT_JSONL = DATASETS_DIR / "data_cleaned_huggingface.jsonl" # Matches Phase 1
 OUTPUT_MODEL = MODELS_DIR / "tiny_code_model.pt"
 OUTPUT_CONFIG = MODELS_DIR / "model_config.json"
 TRAINING_LOG = LOGS_DIR / "training_log.jsonl"
@@ -26,25 +26,45 @@ TRAINING_LOG = LOGS_DIR / "training_log.jsonl"
 MODELS_DIR.mkdir(parents=True, exist_ok=True)
 LOGS_DIR.mkdir(parents=True, exist_ok=True)
 
-# Hyperparameters
-BATCH_SIZE = 8
-BLOCK_SIZE = 128
-MAX_ITERS = 6000
-LEARNING_RATE = 1e-4
-N_EMBD = 256              # Increased from 128 for better capacity
-N_HEAD = 8
-N_LAYER = 12              # Increased from 8 for deeper model
-DROPOUT = 0.1
-GRAD_CLIP = 1.0
+# CPU-OPTIMIZED HYPERPARAMETERS (AGGRESSIVE ANTI-OVERFITTING)
+BATCH_SIZE = 4              # ⬇️  Even smaller (3 instead of 4) - tighter gradient updates
+BLOCK_SIZE = 128             # ⬇️  Shorter sequences (was 96) - less context corruption
+MAX_ITERS = 6000            # ⬇️  Half iterations (was 6000) - stop before overfitting
+LEARNING_RATE = 5e-4        # ⬇️  Lower LR (was 1e-3) - slower, more stable learning
+N_EMBD = 128                 # ⬇️  Smaller (was 128) - 25% smaller model
+N_HEAD = 4                  # ⬇️  Fewer heads (was 4) - less capacity
+N_LAYER = 8                 # ⬇️  Fewer layers (was 8) - lighter model
+DROPOUT = 0.15              # ⬆️  Much higher dropout (was 0.1) - 50% more regularization
+GRAD_CLIP = 0.3             # ⬇️  Tighter gradient clipping (was 0.5)
 TOKENIZER_NAME = "cl100k_base"
-DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
+DEVICE = 'cpu'
+
+# CPU Training improvements (MAXIMUM ANTI-OVERFITTING)
+EVAL_INTERVAL = 150         # ⬆️  Evaluate very frequently (every 250 steps)
+WARMUP_STEPS = 400          # ⬆️  Longer warmup (was 300) - better stability
+WEIGHT_DECAY = 0.02         # ⬆️  Double L2 regularization (was 0.01) - strong penalty
+SAVE_INTERVAL = 500         # ⬇️  Save even less frequently
+PATIENCE = 8       
+
+# Hyperparameters
+# BATCH_SIZE = 8
+# # BLOCK_SIZE = 128
+# MAX_ITERS = 6000
+# EARNING_RATE = 1e-4
+# N_EMBD = 256              # Increased from 128 for better capacity
+# N_HEAD = 8
+# N_LAYER = 12              # Increased from 8 for deeper model
+# DROPOUT = 0.1
+# GRAD_CLIP = 1.0
+# # TOKENIZER_NAME = "cl100k_base"
+# # # DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 # Training improvements
-EVAL_INTERVAL = 100       # Evaluate validation set every N iterations
-WARMUP_STEPS = 500        # Warmup phase for learning rate
-WEIGHT_DECAY = 0.01       # L2 regularization
-SAVE_INTERVAL = 500       # Save checkpoint every N iterations
-PATIENCE = 10             # Early stopping patience (unused yet, for future)
+# # EVAL_INTERVAL = 100       # Evaluate validation set every N iterations
+# WARMUP_STEPS = 500        # Warmup phase for learning rate
+# WEIGHT_DECAY = 0.01       # L2 regularization
+# SAVE_INTERVAL = 500       # Save checkpoint every N iterations
+# PATIENCE = 10             # Early stopping patience (unused yet, for future)
 
 # ============================================================================
 # MODEL ARCHITECTURE (FIXED: Added Causal Mask & Weight Init)

@@ -163,14 +163,16 @@ class CodeGenerator:
         return len(errors) == 0, errors
 
     def generate_react_component(self, prompt, temperature=0.5, top_k=30, max_tokens=600):
-        """Generate React component from prompt (CPU-optimized)"""
-        print_step(f"Generating component on CPU...")
+        """Generate React component from prompt using ChatML format"""
+        print_step(f"Generating component on CPU (ChatML format)...")
         
-        component_prompt = f"React component for: {prompt}\n\nimport React"
-        tokens = self.enc.encode(component_prompt)
+        # Format prompt in ChatML format (same format used during training)
+        # Model learned: <|im_start|>user ... <|im_end|><|im_start|>assistant ... code ...
+        chatml_prompt = f"<|im_start|>user\n{prompt}\n<|im_end|>\n<|im_start|>assistant\n"
+        tokens = self.enc.encode(chatml_prompt)
         x = torch.tensor([tokens], dtype=torch.long, device=self.device)
         
-        generated_code = component_prompt
+        generated_code = chatml_prompt
         
         with torch.no_grad():
             for token_idx in range(max_tokens):
@@ -189,10 +191,13 @@ class CodeGenerator:
                 
                 x = torch.cat((x, idx_next), dim=1)
                 
-                if '<|file_end|>' in token_str or token_idx > max_tokens:
+                # Stop at ChatML end marker or conversation separator
+                if '<|im_end|>' in token_str or '<|file_end|>' in token_str or token_idx > max_tokens:
                     break
         
-        generated_code = generated_code.replace('<|file_end|>', '').strip()
+        # Extract just the code part (remove ChatML markers)
+        generated_code = generated_code.replace('<|im_end|>', '').replace('<|file_end|>', '').strip()
+        generated_code = generated_code.replace(chatml_prompt, '').strip()
         
         is_valid, error_messages = self.validate_react_component(generated_code)
         
@@ -200,11 +205,57 @@ class CodeGenerator:
             print_success(f"Generated ({len(generated_code)} chars)")
             return generated_code
         else:
+            # Try to auto-fix common issues before falling back
+            fixed_code = self._attempt_fixes(generated_code, error_messages)
+            is_valid_fixed, fixed_errors = self.validate_react_component(fixed_code)
+            
+            if is_valid_fixed:
+                print_success(f"Generated with auto-fixes ({len(fixed_code)} chars)")
+                return fixed_code
+            
+            # If still invalid, use fallback
             error_str = "; ".join(error_messages)
             print_warning(f"Validation failed: {error_str}")
             print_warning("Using fallback template...")
             log_generation_error(prompt, generated_code, error_messages)
             return self._get_fallback_component(prompt)
+    
+    def _attempt_fixes(self, code, error_messages):
+        """Attempt to auto-fix common code generation issues"""
+        fixed = code
+        
+        # Fix 1: Missing export statement
+        if "Missing export statement" in error_messages:
+            # Extract component name (look for const/function definitions)
+            match = re.search(r'(const|function)\s+(\w+)\s*[=:]', fixed)
+            if match:
+                component_name = match.group(2)
+                if f"export default {component_name}" not in fixed and "export default" not in fixed:
+                    print_step(f"Auto-fixing: Adding 'export default {component_name};'")
+                    fixed += f"\n\nexport default {component_name};"
+        
+        # Fix 2: Unbalanced braces - try to close them
+        if "Unbalanced braces" in error_messages:
+            open_braces = fixed.count('{') - fixed.count('}')
+            if open_braces > 0:
+                print_step(f"Auto-fixing: Closing {open_braces} unclosed brace(s)")
+                fixed += '\n}' * open_braces
+        
+        # Fix 3: Unbalanced parentheses
+        if "Unbalanced parentheses" in error_messages:
+            open_parens = fixed.count('(') - fixed.count(')')
+            if open_parens > 0:
+                print_step(f"Auto-fixing: Closing {open_parens} unclosed parenthesis/parentheses")
+                fixed += ')' * open_parens
+        
+        # Fix 4: Unbalanced brackets
+        if "Unbalanced brackets" in error_messages:
+            open_brackets = fixed.count('[') - fixed.count(']')
+            if open_brackets > 0:
+                print_step(f"Auto-fixing: Closing {open_brackets} unclosed bracket(s)")
+                fixed += ']' * open_brackets
+        
+        return fixed
     
     def _get_fallback_component(self, prompt):
         """Fallback template based on prompt"""

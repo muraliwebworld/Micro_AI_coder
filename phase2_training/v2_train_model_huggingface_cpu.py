@@ -177,50 +177,91 @@ class TinyCodeModel(nn.Module):
 # DATA LOADING (MEMORY EFFICIENT)
 # ============================================================================
 
-def extract_code_field(entry):
-    """Extract code from entry - handles both original and cleaned dataset formats"""
+def extract_full_conversation(entry):
+    """
+    Extract full conversation (system + user + assistant) in ChatML format.
+    This preserves the instruction-following structure so the model learns:
+    SYSTEM_PROMPT + USER_INSTRUCTION → ASSISTANT_CODE
+    """
     
-    # Cleaned dataset format: direct 'code' field
-    if 'code' in entry and isinstance(entry['code'], str) and len(entry['code']) > 50:
-        return entry['code']
-    
-    # Original dataset format: messages with code blocks
+    # Handle messages array format (from HuggingFace dataset)
     if 'messages' in entry and isinstance(entry['messages'], list):
-        code_blocks = []
-        for msg in entry['messages']:
-            if isinstance(msg, dict) and msg.get('role') == 'assistant':
-                content = msg.get('content', '')
-                if '```' in content:
-                    parts = content.split('```')
-                    for i in range(1, len(parts), 2):
-                        code = parts[i].strip()
-                        lines = code.split('\n')
-                        if lines and lines[0].lower() in ['tsx', 'jsx', 'javascript', 'typescript', 'python', 'java', 'cpp', 'c', 'go', 'rust', 'php', 'html', 'css']:
-                            code = '\n'.join(lines[1:])
-                        if len(code) > 100:
-                            code_blocks.append(code.strip())
-        if code_blocks:
-            return '\n'.join(code_blocks)
+        messages = entry['messages']
+        if len(messages) < 2:
+            return None
+        
+        # Extract system, user, and assistant messages
+        system_msg = None
+        user_msg = None
+        assistant_msg = None
+        
+        for msg in messages:
+            if not isinstance(msg, dict):
+                continue
+            role = msg.get('role', '').lower()
+            content = msg.get('content', '')
+            
+            if role == 'system' and not system_msg:
+                system_msg = content[:500]  # Limit system prompt length
+            elif role == 'user' and not user_msg:
+                user_msg = content
+            elif role == 'assistant' and not assistant_msg:
+                assistant_msg = content
+        
+        # Validate we have all three components
+        if not (user_msg and assistant_msg):
+            return None
+        
+        # Extract code from assistant message (may contain markdown code blocks)
+        code = assistant_msg
+        if '```' in assistant_msg:
+            parts = assistant_msg.split('```')
+            code_blocks = []
+            for i in range(1, len(parts), 2):
+                block = parts[i].strip()
+                lines = block.split('\n')
+                # Remove language identifier line if present
+                if lines and lines[0].lower() in ['tsx', 'jsx', 'javascript', 'typescript', 'python', 'java', 'cpp', 'c', 'go', 'rust', 'php', 'html', 'css']:
+                    block = '\n'.join(lines[1:])
+                if len(block) > 50:
+                    code_blocks.append(block.strip())
+            if code_blocks:
+                code = '\n'.join(code_blocks)
+        
+        # Validate code quality
+        if len(code) < 50:
+            return None
+        
+        # Format as ChatML for instruction-following training
+        if system_msg:
+            conversation = f"<|im_start|>system\n{system_msg}\n<|im_end|>\n<|im_start|>user\n{user_msg}\n<|im_end|>\n<|im_start|>assistant\n{code}\n<|im_end|>"
+        else:
+            conversation = f"<|im_start|>user\n{user_msg}\n<|im_end|>\n<|im_start|>assistant\n{code}\n<|im_end|>"
+        
+        return conversation
     
-    # Fallback to other field names
-    for field in ['response', 'solution', 'content', 'body', 'text', 'output']:
-        if field in entry and isinstance(entry[field], str) and len(entry[field]) > 50:
-            return entry[field]
+    # Fallback for direct code field (from cleaned dataset)
+    if 'code' in entry and isinstance(entry['code'], str) and len(entry['code']) > 50:
+        prompt = entry.get('prompt', 'Generate React component')
+        code = entry['code']
+        return f"<|im_start|>user\n{prompt}\n<|im_end|>\n<|im_start|>assistant\n{code}\n<|im_end|>"
     
     return None
 
 def load_and_tokenize():
-    print_step("Loading Hugging Face dataset (CPU-optimized)...")
+    print_step("Loading dataset with FULL CONVERSATIONS (ChatML format)...")
+    print_warning("⚠️  NEW: Training on prompt+code pairs (NOT just raw code)")
+    print_warning("   This enables the model to learn instruction-following!")
     
     if not INPUT_JSONL.exists():
         raise FileNotFoundError(f"Dataset not found: {INPUT_JSONL}")
     
-    code_samples = []
+    conversations = []
     skipped = 0
     line_num = 0
     
     # Progress tracking
-    max_samples = 18000  # ⬇️ Focus on first 3000 (highest quality from cleaned dataset)
+    max_samples = 18000  # Load up to 18,000 conversations
     
     try:
         with open(INPUT_JSONL, 'r', encoding='utf-8') as f:
@@ -229,44 +270,46 @@ def load_and_tokenize():
                 if line.strip():
                     try:
                         entry = json.loads(line)
-                        code = extract_code_field(entry)
-                        if code:
-                            # Limit code length to 2000 chars for memory
-                            if len(code) > 2000:
-                                code = code[:2000]
-                            code_samples.append(code)
+                        conversation = extract_full_conversation(entry)
+                        if conversation:
+                            # Limit total length for memory
+                            if len(conversation) > 3000:
+                                conversation = conversation[:3000]
+                            conversations.append(conversation)
                         else:
                             skipped += 1
                     except (json.JSONDecodeError, Exception):
                         skipped += 1
                 
                 # Stop after max_samples for memory efficiency
-                if len(code_samples) >= max_samples:
+                if len(conversations) >= max_samples:
                     print_warning(f"Reached {max_samples} samples limit (memory efficiency)")
                     break
                 
                 if line_num % 2000 == 0:
-                    print(f"  Processed {line_num:,} lines... ({len(code_samples)} valid)")
+                    print(f"  Processed {line_num:,} lines... ({len(conversations)} valid conversations)")
     except KeyboardInterrupt:
         print_warning("Loading interrupted")
     
-    print_success(f"Loaded {len(code_samples)} code samples")
-    print_warning(f"Skipped {skipped} entries")
+    print_success(f"Loaded {len(conversations)} conversations with prompts")
+    print_warning(f"Skipped {skipped} entries (invalid format/content)")
     
-    if not code_samples:
-        raise ValueError("No valid code samples found!")
+    if not conversations:
+        raise ValueError("No valid conversations found!")
     
     # Tokenize
-    print_step("Tokenizing...")
-    text = "\n<|file_end|>\n".join(code_samples)
+    print_step("Tokenizing conversations (ChatML format)...")
+    # Join conversations with separator
+    text = "\n<|file_end|>\n".join(conversations)
     enc = tiktoken.get_encoding(TOKENIZER_NAME)
     data = torch.tensor(enc.encode(text), dtype=torch.long)
     
     print_success(f"Tokenized to {len(data):,} tokens")
+    print_success(f"Average tokens per conversation: {len(data) / len(conversations):.0f}")
     
     # Clear memory
     del text
-    del code_samples
+    del conversations
     gc.collect()
     
     return data, enc, enc.n_vocab
@@ -311,11 +354,13 @@ def train():
     print(f"CPU Threads: {NUM_THREADS}")
     print(f"Device: {DEVICE}")
     print(f"\n⚠️  INFO:")
-    print(f"   - This is optimized for M2 Mac with 8GB RAM")
-    print(f"   - Training will take 15-30 minutes (aggressive regularization)")
+    print(f"   - ✅ NEW: Training on FULL CONVERSATIONS (prompt → code)")
+    print(f"   - Format: ChatML (preserves instruction-following structure)")
+    print(f"   - This model will learn to follow user instructions!")
+    print(f"   - Optimized for M2 Mac with 8GB RAM")
+    print(f"   - Training will take 20-40 minutes")
     print(f"   - Your Mac may use swap - this is normal")
     print(f"   - You can interrupt with Ctrl+C (checkpoints will be saved)")
-    print(f"   - AGGRESSIVE anti-overfitting: Smaller model, higher dropout, lower LR, early stopping")
     
     data, enc, vocab_size = load_and_tokenize()
     
