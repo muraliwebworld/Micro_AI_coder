@@ -27,9 +27,9 @@ MODELS_DIR.mkdir(parents=True, exist_ok=True)
 LOGS_DIR.mkdir(parents=True, exist_ok=True)
 
 # CPU-OPTIMIZED HYPERPARAMETERS (AGGRESSIVE ANTI-OVERFITTING)
-BATCH_SIZE = 4              # ⬇️  Even smaller (3 instead of 4) - tighter gradient updates
-BLOCK_SIZE = 128             # ⬇️  Shorter sequences (was 96) - less context corruption
-MAX_ITERS = 6000            # ⬇️  Half iterations (was 6000) - stop before overfitting
+BATCH_SIZE = 2              # ⬇️  Even smaller (3 instead of 4) - tighter gradient updates
+BLOCK_SIZE = 96             # ⬇️  Shorter sequences (was 96) - less context corruption
+MAX_ITERS = 5000            # ⬇️  Half iterations (was 6000) - stop before overfitting
 LEARNING_RATE = 5e-4        # ⬇️  Lower LR (was 1e-3) - slower, more stable learning
 N_EMBD = 128                 # ⬇️  Smaller (was 128) - 25% smaller model
 N_HEAD = 4                  # ⬇️  Fewer heads (was 4) - less capacity

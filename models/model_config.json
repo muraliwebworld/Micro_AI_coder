@@ -3,9 +3,9 @@
   "n_embd": 128,
   "n_head": 4,
   "n_layer": 8,
-  "block_size": 128,
+  "block_size": 96,
   "tokenizer": "cl100k_base",
-  "total_params": 27273728,
-  "best_val_loss": 1.8534465193748475,
-  "training_iterations": 6000
+  "total_params": 27269632,
+  "best_val_loss": 2.0617531061172487,
+  "training_iterations": 5000
 }
