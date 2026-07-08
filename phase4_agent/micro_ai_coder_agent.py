@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
 PHASE 4: MICRO AI CODER AGENT
-Main orchestrator that accepts natural language prompts and generates complete
-multi-file projects with organized output structure.
+Main orchestrator that accepts natural language prompts and generates React components.
+Simplified for single component generation instead of multi-file projects.
 """
 
 import json
@@ -13,7 +13,7 @@ import re
 
 # Import Phase 3 CodeGenerator
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from phase3_inference.v2_inference import CodeGenerator, load_model_and_config, DEVICE
+from phase3_inference.v2_inference import CodeGenerator, load_model_and_config, DEVICE, generate_single_component, save_component
 
 # ============================================================================
 # CONFIGURATION
@@ -45,8 +45,8 @@ def print_log(text):
 
 class MicroAICoderAgent:
     """
-    Main agent that orchestrates multi-file code generation.
-    Accepts natural language prompts and produces organized project structures.
+    Main agent that orchestrates React component generation.
+    Accepts natural language prompts and produces individual components.
     """
     
     def __init__(self):
@@ -56,118 +56,35 @@ class MicroAICoderAgent:
         config, enc = load_model_and_config()
         self.generator = CodeGenerator(config, enc, device=DEVICE)
         
-        self.current_project_dir = None
+        self.current_output_dir = None
         print_success("Agent initialized and ready!")
     
-    def create_project_directory(self):
-        """Create timestamped project directory"""
+    def generate_component(self, user_prompt):
+        """
+        Generate a single React component from a prompt.
+        Returns a dictionary with component metadata and code.
+        """
+        # Create output directory
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        project_dir = OUTPUTS_DIR / timestamp
+        self.current_output_dir = OUTPUTS_DIR / timestamp
         
-        # Create subdirectories
-        (project_dir / "frontend").mkdir(parents=True, exist_ok=True)
-        (project_dir / "backend").mkdir(parents=True, exist_ok=True)
-        (project_dir / "config").mkdir(parents=True, exist_ok=True)
-        
-        self.current_project_dir = project_dir
-        return project_dir
-    
-    def classify_backend_and_pages(self, user_prompt):
-        """
-        Classify backend type and extract page information
-        Returns: dict with backend, database, pages, description
-        """
-        spec = self.generator.parse_user_prompt(user_prompt)
-        
-        return {
-            'backend': spec['backend'],
-            'database': spec['database'],
-            'pages': spec['page_names'],
-            'file_types': spec['file_types'],
-            'prompt': user_prompt
-        }
-    
-    def generate_project(self, user_prompt):
-        """
-        Generate a complete project structure with organized output.
-        Returns a dictionary with project metadata and statistics.
-        """
-        # Create project directory
-        project_dir = self.create_project_directory()
-        
-        # Classify and plan
+        # Generate component
         print_step(f"Analyzing prompt...")
-        spec = self.classify_backend_and_pages(user_prompt)
         
-        print_success(f"Backend: {spec['backend'].upper()}")
-        print_success(f"Database: {spec['database'].upper()}")
-        print_success(f"Pages: {', '.join(spec['pages'])}")
+        print_success(f"Generating React component...")
         
-        # Generate files
-        file_count = 0
-        total_chars = 0
+        # Generate the component
+        component_dict = generate_single_component(self.generator, user_prompt)
         
-        print_header("GENERATING PROJECT")
-        
-        for file_name, code in self.generator.generate_multi_file_project(user_prompt):
-            # Determine output directory
-            if file_name.endswith('.jsx'):
-                output_subdir = project_dir / "frontend"
-            elif file_name.endswith('.js'):
-                output_subdir = project_dir / "backend"
-            elif file_name.endswith('.sql'):
-                output_subdir = project_dir / "backend"
-            elif file_name.endswith('.php'):
-                output_subdir = project_dir / "backend"
-            else:
-                output_subdir = project_dir / "config"
-            
-            # Write file
-            file_path = output_subdir / file_name
-            file_path.write_text(code, encoding='utf-8')
-            
-            file_count += 1
-            total_chars += len(code)
-            
-            # Display progress
-            rel_path = file_path.relative_to(project_dir)
-            print(f"✅ {rel_path} ({len(code)} chars)")
-        
-        # Create metadata
-        metadata = {
-            'generated_at': datetime.now().isoformat(),
-            'prompt': user_prompt,
-            'backend': spec['backend'],
-            'database': spec['database'],
-            'pages': spec['pages'],
-            'total_files': file_count,
-            'total_chars': total_chars,
-            'project_dir': str(project_dir)
-        }
-        
-        metadata_file = project_dir / "metadata.json"
-        metadata_file.write_text(json.dumps(metadata, indent=2), encoding='utf-8')
-        
-        # Create manifest entry
-        manifest_file = OUTPUTS_DIR / "manifest.json"
-        manifest = {}
-        if manifest_file.exists():
-            manifest = json.loads(manifest_file.read_text(encoding='utf-8'))
-        
-        manifest[str(datetime.now())] = {
-            'project_dir': str(project_dir.relative_to(OUTPUTS_DIR)),
-            'prompt': user_prompt,
-            'backend': spec['backend'],
-            'files': file_count
-        }
-        
-        manifest_file.write_text(json.dumps(manifest, indent=2), encoding='utf-8')
+        # Save files
+        save_component(component_dict, self.current_output_dir)
         
         return {
-            'project_dir': project_dir,
-            'file_count': file_count,
-            'total_chars': total_chars,
-            'metadata': metadata
+            'output_dir': self.current_output_dir,
+            'prompt': user_prompt,
+            'code_length': len(component_dict['code']),
+            'explanation_length': len(component_dict['Complex_CoT']),
+            'component': component_dict
         }
 
 # ============================================================================
@@ -176,9 +93,9 @@ class MicroAICoderAgent:
 
 def interactive_agent():
     """Run agent in interactive mode"""
-    print_header("🤖 MICRO AI CODER AGENT")
-    print("Generate complete React + Full-Stack projects with AI")
-    print("Powered by: Ollama (qwen2.5-coder:3b) + PyTorch + tiktoken")
+    print_header("🤖 MICRO AI CODER AGENT - React Component Generator")
+    print("Generate React components from natural language descriptions")
+    print("Powered by: Trained PyTorch Model + tiktoken")
     
     # Initialize agent
     agent = MicroAICoderAgent()
@@ -186,24 +103,27 @@ def interactive_agent():
     while True:
         print("\n" + "="*80)
         print("MENU:")
-        print("  1️⃣  Generate new project")
-        print("  2️⃣  Get help with prompt format")
-        print("  3️⃣  View output directory")
-        print("  4️⃣  Exit")
+        print("  1️⃣  Generate a React component")
+        print("  2️⃣  Generate multiple components")
+        print("  3️⃣  Get help with prompt format")
+        print("  4️⃣  View output directory")
+        print("  5️⃣  Exit")
         print("="*80)
-        print("\n➤ Enter choice (1, 2, 3, or 4): ", end="")
+        print("\n➤ Enter choice (1-5): ", end="")
         
         choice = input().strip()
         
         if choice == '1':
             print("\n" + "─"*80)
-            print("💬 Describe your project (this is where you paste your full prompt):")
+            print("💬 Describe a React component (what should it do?):")
             print("─"*80)
             print("\nExamples:")
-            print("  • 'Create React app with homepage, about, contact pages and Express backend'")
-            print("  • 'Build social media feed with posts, comments, and MySQL database'")
-            print("  • 'Create membership club site with login, register, members list, and footer'")
-            print("\n➤ Your project description: ", end="")
+            print("  • Generate a React component for a login form")
+            print("  • Create a React counter component with increment and decrement buttons")
+            print("  • Write a React todo list component with add/remove functionality")
+            print("  • Create a React form with email and password validation")
+            print("  • Build a React product card component with image and rating")
+            print("\n➤ Component description: ", end="")
             
             user_prompt = input().strip()
             
@@ -211,136 +131,146 @@ def interactive_agent():
                 print_error("Empty prompt, skipping...")
                 continue
             
-            print(f"\n🔄 Starting code generation...\n")
+            print(f"\n🔄 Starting component generation...\n")
             
             try:
-                # Generate project
-                result = agent.generate_project(user_prompt)
+                # Generate component
+                result = agent.generate_component(user_prompt)
                 
                 # Summary
-                print_header("✅ PROJECT GENERATED SUCCESSFULLY")
-                print(f"📁 Location: {result['project_dir']}")
+                print_header("✅ COMPONENT GENERATED SUCCESSFULLY")
+                print(f"📁 Location: {result['output_dir']}")
                 print(f"📊 Statistics:")
-                print(f"   - Files: {result['file_count']}")
-                print(f"   - Total Characters: {result['total_chars']:,}")
-                print(f"   - Backend: {result['metadata']['backend'].upper()}")
-                print(f"   - Database: {result['metadata']['database'].upper()}")
+                print(f"   - Component Code: {result['code_length']:,} characters")
+                print(f"   - Explanation: {result['explanation_length']:,} characters")
                 
-                # Build dynamic directory structure based on actual files
-                structure_lines = [f"   {result['project_dir'].name}/"]
-                dir_map = {
-                    'frontend': 'React components',
-                    'backend': 'Express, SQL schemas, PHP files',
-                    'config': 'Environment files'
-                }
+                print(f"\n📝 Generated Files:")
+                print(f"   ├── component.jsx (React component)")
+                print(f"   ├── explanation.md (How it works)")
+                print(f"   └── metadata.json (Metadata)")
                 
-                dirs_with_files = set()
-                for file_path in result['project_dir'].rglob('*'):
-                    if file_path.is_file() and file_path.name != 'metadata.json':
-                        # Find the top-level directory
-                        rel_path = file_path.relative_to(result['project_dir'])
-                        top_dir = rel_path.parts[0] if rel_path.parts else None
-                        if top_dir:
-                            dirs_with_files.add(top_dir)
+                print(f"\n🎯 Component Preview (first 400 chars):")
+                print("─" * 80)
+                preview = result['component']['code'][:400]
+                print(preview + ("..." if len(result['component']['code']) > 400 else ""))
+                print("─" * 80)
                 
-                # Only show directories that have files
-                dirs_list = sorted(dirs_with_files)
-                for i, dir_name in enumerate(dirs_list):
-                    is_last = (i == len(dirs_list) - 1)
-                    prefix = "└── " if is_last else "├── "
-                    description = dir_map.get(dir_name, dir_name)
-                    structure_lines.append(f"   {prefix}{dir_name}/     ({description})")
-                
-                # Add metadata.json at the end
-                structure_lines.append(f"   └── metadata.json (Project metadata)")
-                
-                print(f"\n📂 Structure:")
-                for line in structure_lines:
-                    print(line)
-                print("="*80)
+                print(f"\n💡 Explanation Preview:")
+                print("─" * 80)
+                print(result['component']['Complex_CoT'][:300] + ("..." if len(result['component']['Complex_CoT']) > 300 else ""))
+                print("─" * 80)
                 
             except Exception as e:
-                print_error(f"Error during generation: {str(e)}")
+                print_error(f"Generation failed: {str(e)}")
+                import traceback
+                traceback.print_exc()
         
         elif choice == '2':
-            print_header("PROMPT FORMAT GUIDE")
-            print("""
-Your prompt should specify:
-
-1. FRAMEWORK:
-   - 'React', 'React app', 'React frontend'
-
-2. PAGES/COMPONENTS:
-   - 'with homepage, about, contact pages'
-   - 'pages: home, login, register, dashboard'
-   - 'HomePage, LoginPage, etc.'
-
-3. BACKEND:
-   - 'Express backend', 'Node.js backend'
-   - 'WordPress backend'
-   - 'PHP backend'
-
-4. DATABASE:
-   - 'MySQL', 'PostgreSQL'
-   - If not specified, defaults to MySQL
-
-EXAMPLE PROMPTS:
-  "Create a React app with homepage, about, contact, register, 
-   and login pages using Express.js backend and MySQL database"
-  
-  "Build a social media feed app with React frontend, Node.js 
-   Express API, and PostgreSQL database"
-  
-  "Make a WordPress site with user profiles and admin dashboard"
-
-Note: Model will generate appropriate file types automatically:
-  - React: .jsx components
-  - Express/Node: .js files (server, routes, middleware)
-  - Database: .sql schemas
-  - WordPress: .php plugins
-            """)
+            print("\n📋 Generate Multiple Components")
+            print("➤ How many components? (1-10): ", end="")
+            try:
+                count = int(input().strip())
+                count = max(1, min(10, count))
+            except ValueError:
+                count = 3
+            
+            prompts = []
+            print(f"\nEnter {count} component prompts:")
+            for i in range(count):
+                print(f"\n  Component {i+1}:")
+                print(f"  ➤ Description: ", end="")
+                prompts.append(input().strip())
+            
+            print(f"\n🔄 Generating {count} components...\n")
+            
+            successful = 0
+            failed = 0
+            
+            for idx, prompt in enumerate(prompts, 1):
+                if not prompt:
+                    print_log(f"[{idx}/{count}] ⏭️  Skipped (empty prompt)")
+                    continue
+                
+                try:
+                    result = agent.generate_component(prompt)
+                    print_success(f"[{idx}/{count}] ✅ {prompt[:60]}")
+                    print(f"            → {result['output_dir'].name}/")
+                    successful += 1
+                    
+                except Exception as e:
+                    print_error(f"[{idx}/{count}] ❌ {prompt[:60]}")
+                    print(f"            Error: {str(e)}")
+                    failed += 1
+            
+            print_header(f"📊 BATCH GENERATION COMPLETE")
+            print(f"✅ Successful: {successful}")
+            print(f"❌ Failed: {failed}")
+            print(f"⏭️  Skipped: {count - successful - failed}")
         
         elif choice == '3':
-            print(f"\n📁 Output directory: {OUTPUTS_DIR}")
-            print("\nRecent projects:")
-            if OUTPUTS_DIR.exists():
-                projects = sorted(OUTPUTS_DIR.glob("*/"), key=lambda x: x.stat().st_mtime, reverse=True)[:5]
-                if projects:
-                    for i, proj in enumerate(projects, 1):
-                        try:
-                            meta_file = proj / "metadata.json"
-                            if meta_file.exists():
-                                meta = json.loads(meta_file.read_text(encoding='utf-8'))
-                                print(f"\n{i}. {proj.name}")
-                                print(f"   Files: {meta['total_files']}")
-                                print(f"   Backend: {meta['backend']}")
-                                print(f"   Prompt: {meta['prompt'][:60]}...")
-                        except:
-                            pass
-                else:
-                    print("No projects generated yet")
-            else:
-                print("Output directory not found")
+            print_header("💡 PROMPT FORMAT GUIDE")
+            print("\n✨ Best Practices for Component Descriptions:\n")
+            print("1. Be specific about functionality:")
+            print("   ❌ 'Create a component'")
+            print("   ✅ 'Create a React button component with click handler'")
+            print()
+            print("2. Include UI elements you want:")
+            print("   ✅ 'Login form with email, password, and submit button'")
+            print("   ✅ 'Card component with image, title, description, and price'")
+            print()
+            print("3. Mention state management needs:")
+            print("   ✅ 'Counter component with increment/decrement buttons and display'")
+            print("   ✅ 'Todo list with add item, remove item, and mark complete'")
+            print()
+            print("4. Specify styling preferences (optional):")
+            print("   ✅ 'Button with Tailwind CSS styling'")
+            print("   ✅ 'Card component using Bootstrap classes'")
+            print()
+            print("5. Include validation if needed:")
+            print("   ✅ 'Form with email validation and required field checking'")
+            print()
+            print("Examples:")
+            print("  • Generate a navbar component with home, about, and contact links")
+            print("  • Create a star rating component with click functionality")
+            print("  • Build a search bar with input field and search button")
+            print("  • Write a modal dialog component with title, body, and action buttons")
         
         elif choice == '4':
-            print("\n✅ Thank you for using Micro AI Coder! 🚀")
+            print_header("📁 OUTPUT DIRECTORY")
+            print(f"\nGenerated components are saved in:")
+            print(f"  {OUTPUTS_DIR}")
+            print(f"\nEach component is in a timestamped directory:")
+            print(f"  {OUTPUTS_DIR}/20260707_120000/")
+            print(f"    ├── component.jsx (React component code)")
+            print(f"    ├── explanation.md (How it works)")
+            print(f"    └── metadata.json (Generation info)")
+            
+            # List recent outputs
+            if OUTPUTS_DIR.exists():
+                outputs = sorted(OUTPUTS_DIR.glob('*'))[-5:]
+                if outputs:
+                    print(f"\nRecent outputs:")
+                    for output_dir in outputs:
+                        if output_dir.is_dir():
+                            print(f"  • {output_dir.name}/")
+        
+        elif choice == '5':
+            print_success("Thank you for using Micro AI Coder Agent! Goodbye!")
             break
         
         else:
-            print_error(f"Invalid choice '{choice}' - please enter 1, 2, 3, or 4")
-            print("💡 Tip: Type the NUMBER (1-4), NOT your prompt text")
-
+            print_error("Invalid choice. Please enter 1-5.")
 
 def main():
     """Main entry point"""
     try:
         interactive_agent()
     except KeyboardInterrupt:
-        print("\n\n✅ Interrupted by user")
-        sys.exit(0)
+        print_success("\nExiting...")
     except Exception as e:
-        print_error(f"Fatal error: {str(e)}")
-        sys.exit(1)
+        print_error(f"Unexpected error: {str(e)}")
+        import traceback
+        traceback.print_exc()
 
 if __name__ == "__main__":
     main()

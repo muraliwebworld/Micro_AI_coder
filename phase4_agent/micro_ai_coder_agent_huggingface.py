@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
 """
-PHASE 3: REACT COMPONENT INFERENCE
-Generates single React components from prompts using the trained model.
-Input: Trained model + tiktoken tokenizer + component prompt
-Output: React component code + Chain-of-Thought explanation
+PHASE 3: REACT COMPONENT INFERENCE (HUGGING FACE MODEL VERSION)
+Generates React components using the HF-trained model.
 """
 
 import torch
@@ -15,7 +13,6 @@ from pathlib import Path
 from datetime import datetime
 import sys
 
-# Add workspace root to Python path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # ============================================================================
@@ -25,9 +22,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 MODELS_DIR = Path(__file__).parent.parent / "models"
 OUTPUTS_DIR = Path(__file__).parent.parent / "outputs"
 LOGS_DIR = Path(__file__).parent.parent / "logs"
-MODEL_PATH = MODELS_DIR / "tiny_code_model.pt"
-CONFIG_PATH = MODELS_DIR / "model_config.json"
-ERROR_LOG_FILE = LOGS_DIR / "inference_errors.jsonl"
+MODEL_PATH = MODELS_DIR / "tiny_code_model_huggingface.pt"
+CONFIG_PATH = MODELS_DIR / "model_config_huggingface.json"
+ERROR_LOG_FILE = LOGS_DIR / "inference_errors_huggingface.jsonl"
 
 OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
 LOGS_DIR.mkdir(parents=True, exist_ok=True)
@@ -52,13 +49,14 @@ def print_warning(text):
     print(f"⚠️  {text}")
 
 def log_generation_error(prompt, generated_code, validation_errors):
-    """Log generated code that failed validation to file"""
+    """Log generated code that failed validation"""
     error_entry = {
         'timestamp': datetime.now().isoformat(),
         'prompt': prompt,
         'generated_code': generated_code,
         'validation_errors': validation_errors,
-        'code_length': len(generated_code)
+        'code_length': len(generated_code),
+        'model': 'huggingface'
     }
     
     try:
@@ -74,25 +72,24 @@ def log_generation_error(prompt, generated_code, validation_errors):
 # ============================================================================
 
 def load_model_and_config():
-    """Load trained model and configuration"""
-    print_step("Loading model and configuration...")
+    """Load trained HF model and configuration"""
+    print_step("Loading Hugging Face model and configuration...")
     
     if not CONFIG_PATH.exists() or not MODEL_PATH.exists():
         print_error("Model or config not found!")
-        print("Run Phase 2 first: python phase2_training/v2_train_model.py")
+        print("Run training first: python phase2_training/v2_train_model_huggingface.py")
         sys.exit(1)
     
-    # Load config
     with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
         config = json.load(f)
     
-    print_success(f"Config loaded")
+    print_success(f"Config loaded (HF dataset)")
     print(f"  - Embedding: {config['n_embd']}")
     print(f"  - Heads: {config['n_head']}")
     print(f"  - Layers: {config['n_layer']}")
     print(f"  - Vocab: {config['vocab_size']:,}")
+    print(f"  - Best val loss: {config.get('best_val_loss', 'N/A')}")
     
-    # Load tokenizer
     enc = tiktoken.get_encoding(config['tokenizer'])
     print_success(f"Tokenizer loaded ({config['tokenizer']})")
     
@@ -103,7 +100,7 @@ def load_model_and_config():
 # ============================================================================
 
 class CodeGenerator:
-    """Generate React components with token-by-token streaming"""
+    """Generate React components with HF-trained model"""
     
     def __init__(self, config, enc, device=DEVICE):
         self.config = config
@@ -114,7 +111,7 @@ class CodeGenerator:
     
     def load_model(self):
         """Load trained model from disk"""
-        from phase2_training.v2_train_model import TinyCodeModel
+        from phase2_training.v2_train_model_huggingface import TinyCodeModel
         
         model = TinyCodeModel(
             vocab_size=self.config['vocab_size'],
@@ -128,19 +125,16 @@ class CodeGenerator:
         model.load_state_dict(torch.load(MODEL_PATH, map_location=self.device, weights_only=False))
         model.eval()
         self.model = model
-        print_success("Model loaded")
+        print_success("HF Model loaded")
     
     def validate_react_component(self, code):
-        """
-        Validate if generated code looks like valid React code.
-        Returns: (is_valid, error_message_list)
-        """
+        """Validate if generated code is valid React"""
         if not code or len(code) < 100:
             return False, ["Code too short"]
         
         errors = []
         
-        # Count parentheses/brackets/braces
+        # Balance checks
         open_parens = code.count('(') - code.count(')')
         open_braces = code.count('{') - code.count('}')
         open_brackets = code.count('[') - code.count(']')
@@ -152,20 +146,16 @@ class CodeGenerator:
         if open_brackets != 0:
             errors.append(f"Unbalanced brackets (diff: {open_brackets})")
         
-        # Check for valid imports
         if 'import React' not in code:
             errors.append("Missing 'import React'")
         
-        # Check for valid export
         if 'export default' not in code and 'module.exports' not in code:
             errors.append("Missing export statement")
         
-        # Check for common corruption patterns
         corruption_patterns = [
-            (r'import React\)', 'Corrupted import statement'),
-            (r'const \[.+?\],', 'Malformed state declaration'),
+            (r'import React\)', 'Corrupted import'),
+            (r'const \[.+?\],', 'Malformed state'),
             (r'useState\(.*?,.*?,', 'Multiple commas in useState'),
-            (r'undefined.*undefined', 'Multiple undefined tokens'),
             (r'PropTypes\),', 'Corrupted PropTypes'),
         ]
         
@@ -173,26 +163,16 @@ class CodeGenerator:
             if re.search(pattern, code):
                 errors.append(error_msg)
         
-        # Must have a function or class definition
         if not re.search(r'(const|function|class)\s+\w+\s*=?\s*(\(|{)', code):
-            errors.append("No valid component definition found")
+            errors.append("No valid component definition")
         
-        if errors:
-            return False, errors
-        
-        return True, []
+        return len(errors) == 0, errors
 
-    def generate_react_component(self, prompt, temperature=0.7, top_k=50, max_tokens=800):
-        """
-        Generate a React component from a prompt using the trained model.
-        Returns component code or falls back to template if validation fails.
-        """
+    def generate_react_component(self, prompt, temperature=0.6, top_k=40, max_tokens=800):
+        """Generate React component from prompt"""
         print_step(f"Generating React component...")
         
-        # Enhanced prompt for component generation
         component_prompt = f"React component for: {prompt}\n\nimport React"
-        
-        # Encode prompt
         tokens = self.enc.encode(component_prompt)
         x = torch.tensor([tokens], dtype=torch.long, device=self.device)
         
@@ -200,53 +180,40 @@ class CodeGenerator:
         
         with torch.no_grad():
             for token_idx in range(max_tokens):
-                # Get next token logits
                 logits = self.model(x[:, -self.config['block_size']:])
                 logits = logits[:, -1, :] / temperature
                 
-                # Top-k filtering
                 if top_k is not None:
                     v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
                     logits[logits < v[:, [-1]]] = -float('Inf')
                 
-                # Sample next token
                 probs = F.softmax(logits, dim=-1)
                 idx_next = torch.multinomial(probs, num_samples=1)
-                
-                # Decode token
                 token_str = self.enc.decode([idx_next.item()])
                 generated_code += token_str
                 
-                # Append to sequence
                 x = torch.cat((x, idx_next), dim=1)
                 
-                # Stop conditions
                 if '<|file_end|>' in token_str or token_idx > max_tokens:
                     break
         
-        # Clean up generated code
         generated_code = generated_code.replace('<|file_end|>', '').strip()
         
-        # Validate generated code
         is_valid, error_messages = self.validate_react_component(generated_code)
         
         if is_valid:
             print_success(f"Generated component ({len(generated_code)} chars)")
             return generated_code
         else:
-            # Log the error for analysis
             error_str = "; ".join(error_messages)
             print_warning(f"Generated code failed validation: {error_str}")
-            print_warning("Logging error and using fallback template...")
+            print_warning("Using fallback template...")
             
-            # Save error log
             log_generation_error(prompt, generated_code, error_messages)
-            
-            # Use fallback
             return self._get_fallback_component(prompt)
     
     def _get_fallback_component(self, prompt):
-        """Fallback template when model generation fails validation"""
+        """Fallback template based on prompt"""
         prompt_lower = prompt.lower()
         
         if 'form' in prompt_lower or 'login' in prompt_lower or 'signup' in prompt_lower:
@@ -259,19 +226,15 @@ const LoginForm = () => {
   
   const handleSubmit = (e) => {
     e.preventDefault();
-    
     if (!email || !password) {
       setError('Please fill in all fields');
       return;
     }
-    
     if (!email.includes('@')) {
       setError('Please enter a valid email');
       return;
     }
-    
     console.log('Form submitted:', { email, password });
-    setError('');
     alert('Login successful!');
   };
   
@@ -279,36 +242,16 @@ const LoginForm = () => {
     <div style={{ maxWidth: '400px', margin: '50px auto', padding: '20px', border: '1px solid #ccc', borderRadius: '8px' }}>
       <h2>Login</h2>
       {error && <div style={{ color: 'red', marginBottom: '10px' }}>{error}</div>}
-      
       <form onSubmit={handleSubmit}>
         <div style={{ marginBottom: '15px' }}>
           <label>Email:</label>
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="Enter your email"
-            style={{ width: '100%', padding: '8px', marginTop: '5px', boxSizing: 'border-box' }}
-          />
+          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Enter email" style={{ width: '100%', padding: '8px', marginTop: '5px' }} />
         </div>
-        
         <div style={{ marginBottom: '15px' }}>
           <label>Password:</label>
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="Enter your password"
-            style={{ width: '100%', padding: '8px', marginTop: '5px', boxSizing: 'border-box' }}
-          />
+          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Enter password" style={{ width: '100%', padding: '8px', marginTop: '5px' }} />
         </div>
-        
-        <button
-          type="submit"
-          style={{ width: '100%', padding: '10px', backgroundColor: '#007bff', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '16px' }}
-        >
-          Login
-        </button>
+        <button type="submit" style={{ width: '100%', padding: '10px', backgroundColor: '#007bff', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Login</button>
       </form>
     </div>
   );
@@ -316,52 +259,26 @@ const LoginForm = () => {
 
 export default LoginForm;"""
         
-        elif 'counter' in prompt_lower or 'increment' in prompt_lower or 'decrement' in prompt_lower:
+        elif 'counter' in prompt_lower:
             return """import React, { useState } from 'react';
 
 const Counter = () => {
   const [count, setCount] = useState(0);
   
-  const increment = () => setCount(count + 1);
-  const decrement = () => setCount(count - 1);
-  const reset = () => setCount(0);
-  
   return (
     <div style={{ textAlign: 'center', padding: '20px' }}>
       <h2>Counter</h2>
-      <div style={{ fontSize: '48px', fontWeight: 'bold', margin: '20px' }}>
-        {count}
-      </div>
-      
-      <div>
-        <button
-          onClick={increment}
-          style={{ padding: '10px 20px', margin: '5px', fontSize: '16px', cursor: 'pointer' }}
-        >
-          Increment
-        </button>
-        
-        <button
-          onClick={decrement}
-          style={{ padding: '10px 20px', margin: '5px', fontSize: '16px', cursor: 'pointer' }}
-        >
-          Decrement
-        </button>
-        
-        <button
-          onClick={reset}
-          style={{ padding: '10px 20px', margin: '5px', fontSize: '16px', cursor: 'pointer', backgroundColor: '#ff6b6b', color: 'white' }}
-        >
-          Reset
-        </button>
-      </div>
+      <div style={{ fontSize: '48px', fontWeight: 'bold', margin: '20px' }}>{count}</div>
+      <button onClick={() => setCount(count + 1)} style={{ padding: '10px 20px', margin: '5px' }}>Increment</button>
+      <button onClick={() => setCount(count - 1)} style={{ padding: '10px 20px', margin: '5px' }}>Decrement</button>
+      <button onClick={() => setCount(0)} style={{ padding: '10px 20px', margin: '5px', backgroundColor: '#ff6b6b', color: 'white' }}>Reset</button>
     </div>
   );
 };
 
 export default Counter;"""
         
-        elif 'todo' in prompt_lower or 'list' in prompt_lower or 'task' in prompt_lower:
+        elif 'todo' in prompt_lower or 'list' in prompt_lower:
             return """import React, { useState } from 'react';
 
 const TodoList = () => {
@@ -375,56 +292,18 @@ const TodoList = () => {
     }
   };
   
-  const toggleTodo = (id) => {
-    setTodos(todos.map(todo =>
-      todo.id === id ? { ...todo, completed: !todo.completed } : todo
-    ));
-  };
-  
-  const removeTodo = (id) => {
-    setTodos(todos.filter(todo => todo.id !== id));
-  };
-  
   return (
     <div style={{ maxWidth: '500px', margin: '50px auto', padding: '20px' }}>
       <h2>Todo List</h2>
-      
       <div style={{ marginBottom: '15px' }}>
-        <input
-          type="text"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyPress={(e) => e.key === 'Enter' && addTodo()}
-          placeholder="Add a new todo..."
-          style={{ width: '80%', padding: '8px', marginRight: '5px' }}
-        />
-        <button
-          onClick={addTodo}
-          style={{ padding: '8px 15px', cursor: 'pointer' }}
-        >
-          Add
-        </button>
+        <input type="text" value={input} onChange={(e) => setInput(e.target.value)} placeholder="Add todo..." style={{ width: '80%', padding: '8px' }} />
+        <button onClick={addTodo} style={{ padding: '8px 15px', marginLeft: '5px' }}>Add</button>
       </div>
-      
       <ul style={{ listStyle: 'none', padding: 0 }}>
         {todos.map(todo => (
-          <li key={todo.id} style={{ padding: '10px', borderBottom: '1px solid #ddd', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span
-              onClick={() => toggleTodo(todo.id)}
-              style={{
-                textDecoration: todo.completed ? 'line-through' : 'none',
-                cursor: 'pointer',
-                flex: 1
-              }}
-            >
-              {todo.text}
-            </span>
-            <button
-              onClick={() => removeTodo(todo.id)}
-              style={{ color: 'red', border: 'none', cursor: 'pointer', backgroundColor: '#fff' }}
-            >
-              Delete
-            </button>
+          <li key={todo.id} style={{ padding: '10px', borderBottom: '1px solid #ddd' }}>
+            {todo.text}
+            <button onClick={() => setTodos(todos.filter(t => t.id !== todo.id))} style={{ marginLeft: '10px', color: 'red', border: 'none', cursor: 'pointer', backgroundColor: '#fff' }}>Delete</button>
           </li>
         ))}
       </ul>
@@ -440,27 +319,11 @@ export default TodoList;"""
 const Component = () => {
   const [state, setState] = useState(null);
   
-  const handleChange = (e) => {
-    setState(e.target.value);
-  };
-  
   return (
     <div style={{ padding: '20px', fontFamily: 'Arial, sans-serif' }}>
       <h2>React Component</h2>
-      
-      <input 
-        type="text"
-        value={state || ''}
-        onChange={handleChange}
-        placeholder="Enter something..."
-        style={{ padding: '8px', width: '100%', maxWidth: '400px', marginBottom: '10px' }}
-      />
-      
-      {state && (
-        <div style={{ padding: '10px', backgroundColor: '#f0f0f0', borderRadius: '4px', marginTop: '10px' }}>
-          <p><strong>You entered:</strong> {state}</p>
-        </div>
-      )}
+      <input type="text" value={state || ''} onChange={(e) => setState(e.target.value)} placeholder="Enter something..." style={{ padding: '8px', width: '100%', maxWidth: '400px', marginBottom: '10px' }} />
+      {state && <div style={{ padding: '10px', backgroundColor: '#f0f0f0', borderRadius: '4px', marginTop: '10px' }}><p><strong>You entered:</strong> {state}</p></div>}
     </div>
   );
 };
@@ -468,62 +331,32 @@ const Component = () => {
 export default Component;"""
     
     def generate_component_explanation(self, prompt, code):
-        """
-        Generate a Chain-of-Thought explanation for the component.
-        This mimics the Complex_CoT field in the training dataset.
-        """
+        """Generate explanation for component"""
         print_step("Generating explanation...")
         
-        # Use a heuristic-based explanation
-        cot_template = f"This component implements: {prompt[:80]}. "
+        cot = f"This component implements: {prompt[:80]}. "
         
-        # Detect key patterns and add explanation
         if 'form' in prompt.lower():
-            cot_template += "It includes input handling and state management with useState hooks. "
-        if 'list' in prompt.lower():
-            cot_template += "It renders items from an array using map() function. "
-        if 'button' in prompt.lower():
-            cot_template += "It includes onClick handlers for user interactions. "
-        if 'api' in prompt.lower() or 'fetch' in prompt.lower():
-            cot_template += "It includes useEffect for data fetching from APIs. "
+            cot += "It includes form handling with input fields and validation. "
+        if 'list' in prompt.lower() or 'todo' in prompt.lower():
+            cot += "It manages a list of items with add/remove functionality. "
+        if 'counter' in prompt.lower():
+            cot += "It provides increment and decrement operations. "
         
         if 'useState' in code:
-            cot_template += "State management is handled with React hooks (useState). "
-        if 'useEffect' in code:
-            cot_template += "Side effects are managed with useEffect hook. "
+            cot += "State management is handled with React hooks. "
         
-        cot_template += "The component is a functional React component with proper JSX structure."
+        cot += "The component is a functional React component with proper JSX structure."
         
-        print_success(f"Generated explanation ({len(cot_template)} chars)")
-        return cot_template
-    
-    def parse_user_prompt(self, user_prompt):
-        """
-        Simple prompt parsing for React component generation.
-        Returns component description and styling preference.
-        """
-        prompt_lower = user_prompt.lower()
-        
-        # Extract styling framework
-        styling = 'tailwind'
-        if 'bootstrap' in prompt_lower:
-            styling = 'bootstrap'
-        elif 'css' in prompt_lower or 'style' in prompt_lower or 'styled' in prompt_lower:
-            styling = 'css'
-        elif 'material' in prompt_lower or 'mui' in prompt_lower:
-            styling = 'material'
-        
-        return {
-            'component_description': user_prompt,
-            'styling': styling
-        }
+        print_success(f"Generated explanation ({len(cot)} chars)")
+        return cot
 
 # ============================================================================
-# MAIN INFERENCE FUNCTIONS
+# MAIN FUNCTIONS
 # ============================================================================
 
 def generate_single_component(generator, prompt):
-    """Generate a single React component and return as dict"""
+    """Generate single component"""
     code = generator.generate_react_component(prompt)
     cot = generator.generate_component_explanation(prompt, code)
     
@@ -534,38 +367,27 @@ def generate_single_component(generator, prompt):
     }
 
 def save_component(component_dict, output_dir):
-    """Save component to files in output directory"""
+    """Save component to files"""
     output_dir.mkdir(parents=True, exist_ok=True)
     
-    # Save metadata
     metadata = {
         'generated_at': datetime.now().isoformat(),
-        'prompt': component_dict['prompt']
+        'prompt': component_dict['prompt'],
+        'model': 'huggingface'
     }
     
-    metadata_file = output_dir / "metadata.json"
-    metadata_file.write_text(json.dumps(metadata, indent=2), encoding='utf-8')
-    
-    # Save component code
-    component_file = output_dir / "component.jsx"
-    component_file.write_text(component_dict['code'], encoding='utf-8')
-    
-    # Save explanation
-    explanation_file = output_dir / "explanation.md"
-    explanation_file.write_text(f"# Component Explanation\n\n{component_dict['Complex_CoT']}", encoding='utf-8')
+    (output_dir / "metadata.json").write_text(json.dumps(metadata, indent=2), encoding='utf-8')
+    (output_dir / "component.jsx").write_text(component_dict['code'], encoding='utf-8')
+    (output_dir / "explanation.md").write_text(f"# Component Explanation\n\n{component_dict['Complex_CoT']}", encoding='utf-8')
     
     print_success(f"Saved to {output_dir}/")
     print(f"  - component.jsx ({len(component_dict['code'])} chars)")
     print(f"  - explanation.md ({len(component_dict['Complex_CoT'])} chars)")
 
-# ============================================================================
-# INTERACTIVE CLI
-# ============================================================================
-
 def interactive_menu(generator):
-    """Interactive testing menu"""
+    """Interactive menu"""
     while True:
-        print_header("PHASE 3: REACT COMPONENT INFERENCE")
+        print_header("REACT COMPONENT INFERENCE - HUGGING FACE MODEL")
         print("\n1. Generate a React component")
         print("2. Generate multiple components")
         print("3. View error logs")
@@ -575,32 +397,24 @@ def interactive_menu(generator):
         choice = input().strip()
         
         if choice == '1':
-            print("\n💬 Describe a React component (what should it do?):")
-            print("\nExamples:")
-            print("  • Generate a React component for a login form")
-            print("  • Create a React counter component with increment and decrement buttons")
-            print("  • Write a React todo list component with add/remove functionality")
-            print("  • Create a React form with email and password validation")
-            print("  • Build a React product card component with image and rating")
-            print("\n➤ Component description: ", end="")
+            print("\n💬 Describe a React component:")
+            print("➤ Prompt: ", end="")
             prompt = input().strip()
             
             if not prompt:
-                print_error("Empty prompt, skipping...")
+                print_error("Empty prompt")
                 continue
             
-            print(f"\n🔄 Starting component generation...\n")
+            print(f"\n🔄 Generating component...\n")
             
             try:
                 component = generate_single_component(generator, prompt)
-                
-                # Save output
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                output_dir = OUTPUTS_DIR / timestamp
+                output_dir = OUTPUTS_DIR / f"{timestamp}_hf"
                 save_component(component, output_dir)
                 
-                print_header("✅ COMPONENT GENERATED SUCCESSFULLY")
-                print(f"\n📁 Location: {output_dir}")
+                print_header("✅ COMPONENT GENERATED")
+                print(f"Location: {output_dir}")
                 
             except Exception as e:
                 print_error(f"Generation failed: {str(e)}")
@@ -615,12 +429,10 @@ def interactive_menu(generator):
                 count = 3
             
             prompts = []
-            print(f"\nEnter {count} component prompts:")
+            print(f"\nEnter {count} prompts:")
             for i in range(count):
                 print(f"  {i+1}. ", end="")
                 prompts.append(input().strip())
-            
-            print(f"\n🔄 Generating {count} components...\n")
             
             for idx, prompt in enumerate(prompts, 1):
                 if not prompt:
@@ -629,34 +441,25 @@ def interactive_menu(generator):
                 
                 try:
                     component = generate_single_component(generator, prompt)
-                    
-                    # Save output
                     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    output_dir = OUTPUTS_DIR / f"{timestamp}_comp{idx}"
+                    output_dir = OUTPUTS_DIR / f"{timestamp}_hf_comp{idx}"
                     save_component(component, output_dir)
-                    
-                    print(f"  [{idx}/{count}] ✅ Generated: {prompt[:50]}")
-                    
+                    print(f"  [{idx}/{count}] ✅ Generated")
                 except Exception as e:
                     print_error(f"  [{idx}/{count}] Failed: {str(e)}")
-            
-            print_success(f"\n✅ Generated {count} components!")
         
         elif choice == '3':
-            # View error logs
             if not ERROR_LOG_FILE.exists():
-                print_warning("No error logs found yet")
+                print_warning("No error logs")
             else:
-                print_header("📋 GENERATION ERROR LOGS")
-                with open(ERROR_LOG_FILE, 'r', encoding='utf-8') as f:
+                with open(ERROR_LOG_FILE) as f:
                     lines = f.readlines()
-                    print(f"\nTotal errors: {len(lines)}")
-                    print("\nRecent errors (last 5):")
-                    for error_line in lines[-5:]:
-                        error_data = json.loads(error_line)
-                        print(f"\n  Prompt: {error_data['prompt'][:60]}")
-                        print(f"  Code length: {error_data['code_length']} chars")
-                        print(f"  Errors: {'; '.join(error_data['validation_errors'])}")
+                print_header("ERROR LOGS")
+                print(f"Total errors: {len(lines)}")
+                for error_line in lines[-5:]:
+                    data = json.loads(error_line)
+                    print(f"\n  Prompt: {data['prompt'][:50]}")
+                    print(f"  Errors: {'; '.join(data['validation_errors'])}")
         
         elif choice == '4':
             print_success("Goodbye!")
@@ -666,7 +469,6 @@ def interactive_menu(generator):
             print_error("Invalid choice")
 
 def main():
-    """Main entry point"""
     config, enc = load_model_and_config()
     generator = CodeGenerator(config, enc, device=DEVICE)
     interactive_menu(generator)

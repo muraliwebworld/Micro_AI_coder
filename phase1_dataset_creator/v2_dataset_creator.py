@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-PHASE 1: DATASET CREATOR
-Generates diverse full-stack training datasets from user prompts via local Ollama.
-Target Skills: ReactJS, NodeJS, MySQL, PostgreSQL, WordPress, PHP
+PHASE 1: REACT COMPONENT DATASET CREATOR
+Generates React component training datasets matching reactjs_projects_dataset.jsonl format.
+Each dataset entry: {prompt, code, Complex_CoT}
 """
 import requests
 import json
@@ -17,7 +17,7 @@ OLLAMA_BASE_URL = "http://localhost:11434"
 OLLAMA_URL = f"{OLLAMA_BASE_URL}/api/generate"
 DATASETS_DIR = Path(__file__).parent.parent / "datasets"
 
-# FIXED: Match the filename expected by Phase 2
+# Output to the same format as reactjs_projects_dataset.jsonl
 OUTPUT_JSONL = DATASETS_DIR / "generated_projects_final.jsonl" 
 OUTPUT_TXT = DATASETS_DIR / "generated_projects.txt"
 MODEL_NAME = "qwen2.5-coder:3b"
@@ -47,143 +47,189 @@ def check_ollama_connection():
         print_error(f"Cannot connect to Ollama: {str(e)}")
         return False
 
-def get_project_prompt_from_user():
-    print_header("🚀 MICRO AI CODER - DATASET GENERATOR (Phase 1)")
-    print("\nEnter your project description (what should the app do?):")
-    print("➤ Project description:", end="")
-    project_description = input().strip()
-    if not project_description:
+def get_component_prompt_from_user():
+    print_header("🚀 MICRO AI CODER - REACT COMPONENT DATASET GENERATOR (Phase 1)")
+    print("\nDescribe a React component you want to generate:")
+    print("Examples:")
+    print("  • Generate a React component for a login form")
+    print("  • Create a React counter component with increment/decrement buttons")
+    print("  • Write a React todo list component")
+    print("  • Create a React form with validation")
+    print("\n➤ Component description:", end="")
+    prompt = input().strip()
+    if not prompt:
         print_warning("No description provided. Using default example...")
-        project_description = "Members Club with user registration, login, and member profiles"
-    return project_description
-
-def get_technologies():
-    print("\nSelect technologies (comma-separated):")
-    print("Available: react, node, express, php, mysql, postgresql, wordpress")
-    print("➤ Technologies:", end="")
-    techs_input = input().strip().lower()
-    if not techs_input:
-        return ["react", "node", "express", "mysql"]
-    return [t.strip() for t in techs_input.split(",")]
+        prompt = "Generate a React component for displaying user profile information"
+    return prompt
 
 def clean_code_output(code):
-    """Robustly remove Markdown code fences using Regex"""
-    # Remove opening fences like ```php, ```javascript, ```sql, etc.
+    """Remove Markdown code fences and clean JSX code"""
+    # Remove opening fences like ```javascript, ```jsx, ```javascript etc.
     code = re.sub(r'^```[a-zA-Z]*\s*\n?', '', code, flags=re.MULTILINE)
     # Remove closing fences
     code = re.sub(r'\n?```\s*$', '', code, flags=re.MULTILINE)
     return code.strip()
 
-def validate_code_structure(code, file_type):
-    """
-    FIXED: Replaced flawed 'word_ratio' check. 
-    Code naturally has repetitive keywords (const, function, div, SELECT).
-    We now check for structural code elements instead.
-    """
-    if len(code) < 40:
-        return False, "Code too short"
+def validate_react_component(code):
+    """Validate that code is a proper React component"""
+    if len(code) < 100:
+        return False, "Code too short for a React component (< 100 chars)"
     
-    has_newlines = code.count('\n') >= 3
-    has_code_symbols = any(sym in code for sym in ['{', '}', ';', '=', '<', '>', 'function', 'class', 'SELECT', 'CREATE', 'import', 'require'])
+    # Check for essential React patterns
+    has_import = 'import' in code and ('React' in code or 'from' in code)
+    has_export = 'export' in code
+    has_jsx = '<' in code and '>' in code  # Basic JSX check
+    has_function_or_class = 'function' in code or 'const' in code or 'class' in code
     
-    if not (has_newlines and has_code_symbols):
-        return False, "Lacks typical code structure or newlines"
-        
+    if not (has_import and has_export and has_jsx and has_function_or_class):
+        missing = []
+        if not has_import: missing.append("React import")
+        if not has_export: missing.append("export statement")
+        if not has_jsx: missing.append("JSX (< > tags)")
+        if not has_function_or_class: missing.append("function/const/class definition")
+        return False, f"Missing: {', '.join(missing)}"
+    
     return True, ""
 
-def generate_multi_file_project(project_description, technologies):
-    # ... [Keep your existing file_specs logic exactly as you had it] ...
-    # (For brevity, assume the file_specs dictionary generation from your original code is here)
+def generate_react_component(prompt):
+    """Generate a single React component from a prompt"""
+    print_step(f"Generating React component...")
     
-    # Determine file types based on technologies (Simplified for example, use your full logic)
-    file_specs = []
-    if "react" in technologies:
-        file_specs.append({"name":"App.jsx","type":"react","description":"Main app component"})
-    if "node" in technologies or "express" in technologies:
-        file_specs.append({"name":"server.js","type":"node","description":"Express server setup"})
-    if "php" in technologies:
-        file_specs.append({"name":"index.php","type":"php","description":"Main PHP entry point"})
-    if "mysql" in technologies or "postgresql" in technologies:
-        file_specs.append({"name":"schema.sql","type":"sql","description":"Database schema"})
+    # Enhance prompt for better React generation
+    enhanced_prompt = f"""Generate a complete, self-contained React component that implements the following:
+{prompt}
 
-    print(f"\n📋 Project Structure: {len(file_specs)} files to generate")
-    generated_project = []
+Requirements:
+- Use React hooks (useState, useEffect, etc.)
+- Include proper imports at the top
+- Export as default
+- Include JSX with proper structure
+- Make it functional and practical
+- NO explanations, just the code
 
-    for idx, file_spec in enumerate(file_specs, 1):
-        file_name = file_spec["name"]
-        file_type = file_spec["type"]
-        description = file_spec["description"]
-        
-        print(f"\n[{idx}/{len(file_specs)}] Generating {file_name}...")
-        
-        # Build prompt (Use your existing detailed prompts here)
-        file_prompt = f"Create a {file_type} file named {file_name}. Context: {project_description}. Purpose: {description}. Output ONLY raw code, NO markdown backticks."
-        
-        payload = {"model": MODEL_NAME, "prompt": file_prompt, "stream": False, "temperature": 0.6}
-        
-        try:
-            response = requests.post(OLLAMA_URL, json=payload, timeout=120)
-            if response.status_code == 200:
-                generated_code = response.json().get("response", "").strip()
-                
-                # 1. Clean Markdown
-                generated_code = clean_code_output(generated_code)
-                
-                # 2. Validate Structure (FIXED)
-                is_valid, reason = validate_code_structure(generated_code, file_type)
-                
-                if is_valid:
-                    generated_project.append({"filename": file_name, "code": generated_code})
-                    print_success(f"Generated {file_name} ({len(generated_code)} chars)")
-                else:
-                    print_warning(f"Invalid structure for {file_name}: {reason}")
-            else:
-                print_error(f"Error {response.status_code}")
-        except Exception as e:
-            print_error(f"Exception: {str(e)}")
+Output only the React component code, no markdown backticks."""
+    
+    payload = {
+        "model": MODEL_NAME,
+        "prompt": enhanced_prompt,
+        "stream": False,
+        "temperature": 0.7
+    }
+    
+    try:
+        response = requests.post(OLLAMA_URL, json=payload, timeout=120)
+        if response.status_code == 200:
+            code = response.json().get("response", "").strip()
+            code = clean_code_output(code)
             
-        if idx < len(file_specs): time.sleep(2) # Rate limiting
+            is_valid, reason = validate_react_component(code)
+            if is_valid:
+                print_success(f"Generated component ({len(code)} chars)")
+                return code
+            else:
+                print_warning(f"Generated code validation failed: {reason}")
+                return None
+        else:
+            print_error(f"API Error {response.status_code}")
+            return None
+    except Exception as e:
+        print_error(f"Exception: {str(e)}")
+        return None
 
-    return generated_project
+def generate_chain_of_thought(prompt, code):
+    """Generate Chain-of-Thought explanation for the component"""
+    print_step(f"Generating explanation...")
+    
+    cot_prompt = f"""Given this React component prompt and implementation, provide a brief technical explanation of how it works.
 
-def save_to_jsonl(project_name, project_description, technologies, files):
-    # FIXED: Appending to the correct final filename
+Prompt: {prompt}
+
+Code:
+{code}
+
+Provide a concise explanation (2-3 sentences) of what the component does and how it works. Start with "The prompt asks for..." or "This component implements...".
+No markdown, just plain text explanation."""
+    
+    payload = {
+        "model": MODEL_NAME,
+        "prompt": cot_prompt,
+        "stream": False,
+        "temperature": 0.5
+    }
+    
+    try:
+        response = requests.post(OLLAMA_URL, json=payload, timeout=120)
+        if response.status_code == 200:
+            explanation = response.json().get("response", "").strip()
+            print_success(f"Generated explanation ({len(explanation)} chars)")
+            return explanation
+        else:
+            print_warning("Could not generate explanation")
+            return f"React component for: {prompt}"
+    except Exception as e:
+        print_warning(f"Explanation generation failed: {str(e)}")
+        return f"React component for: {prompt}"
+
+def save_to_jsonl(prompt, code, cot_explanation):
+    """Save component to JSONL in the format of reactjs_projects_dataset.jsonl"""
+    entry = {
+        "prompt": prompt,
+        "code": code,
+        "Complex_CoT": cot_explanation
+    }
+    
     with open(OUTPUT_JSONL, "a", encoding="utf-8") as f:
-        for file_info in files:
-            entry = {
-                "project": project_name,
-                "type": "code",
-                "file": file_info['filename'],
-                "description": f"Part of {project_description}",
-                "code": file_info['code']
-            }
-            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    
+    print_success(f"Saved to dataset: {OUTPUT_JSONL}")
 
 def main():
-    if not check_ollama_connection(): sys.exit(1)
+    if not check_ollama_connection():
+        sys.exit(1)
     
-    # Clear files for fresh run
-    OUTPUT_JSONL.write_text("", encoding="utf-8")
-    OUTPUT_TXT.write_text("# MICRO AI CODER DATASET\n", encoding="utf-8")
+    # Clear file for fresh run (or ask user)
+    print_header("🚀 MICRO AI CODER - REACT COMPONENT DATASET GENERATOR")
     
-    project_count = 0
+    if OUTPUT_JSONL.exists():
+        print(f"\nDataset file exists: {OUTPUT_JSONL}")
+        print("➤ Append to existing? (yes/no):", end="")
+        if input().strip().lower() not in ["yes", "y"]:
+            OUTPUT_JSONL.write_text("", encoding="utf-8")
+    else:
+        OUTPUT_JSONL.write_text("", encoding="utf-8")
+    
+    component_count = 0
+    
     while True:
-        project_description = get_project_prompt_from_user()
-        technologies = get_technologies()
-        project_name = f"Project_{project_count + 1}"
+        print("\n" + "─"*80)
+        prompt = get_component_prompt_from_user()
         
-        files = generate_multi_file_project(project_description, technologies)
-        if files:
-            save_to_jsonl(project_name, project_description, technologies, files)
-            print_success(f"Saved {len(files)} files to dataset.")
-            project_count += 1
+        # Generate component
+        code = generate_react_component(prompt)
+        
+        if code:
+            # Generate explanation
+            cot_explanation = generate_chain_of_thought(prompt, code)
             
-        print("\nGenerate another project? (yes/no):", end="")
+            # Save to dataset
+            save_to_jsonl(prompt, code, cot_explanation)
+            component_count += 1
+            
+            print_success(f"Component {component_count} added to dataset")
+        else:
+            print_warning("Skipping this component due to validation failure")
+        
+        print("\n➤ Generate another component? (yes/no):", end="")
         if input().strip().lower() not in ["yes", "y"]:
             break
-            
+        
+        # Rate limiting
+        time.sleep(2)
+    
     print_header("✅ DATASET GENERATION COMPLETE!")
-    print(f"Ready for Phase 2: python phase2_training/v2_train_model.py")
+    print(f"Total components generated: {component_count}")
+    print(f"Dataset saved to: {OUTPUT_JSONL}")
+    print(f"\nNext step: python phase2_training/v2_train_model.py")
 
 if __name__ == "__main__":
     main()

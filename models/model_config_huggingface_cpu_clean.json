@@ -1,0 +1,14 @@
+{
+  "vocab_size": 100277,
+  "n_embd": 96,
+  "n_head": 3,
+  "n_layer": 6,
+  "block_size": 80,
+  "tokenizer": "cl100k_base",
+  "total_params": 19709760,
+  "best_val_loss": 2.4578632513682046,
+  "training_iterations": 3500,
+  "source": "huggingface_dataset_cpu",
+  "device": "cpu",
+  "batch_size": 3
+}

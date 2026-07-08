@@ -1,0 +1,3 @@
+Conversion started: 2026-07-08T11:44:37.553468
+
+INVALID: Entry 47: Invalid 'Complex_CoT': too short (0 chars)
