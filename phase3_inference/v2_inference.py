@@ -182,21 +182,33 @@ class CodeGenerator:
         
         return True, []
 
-    def generate_react_component(self, prompt, temperature=0.7, top_k=50, max_tokens=800):
+    def generate_react_component(self, prompt, temperature=0.4, top_k=30, max_tokens=600):
         """
         Generate a React component from a prompt using the trained model.
         Returns component code or falls back to template if validation fails.
+        
+        IMPROVED GENERATION:
+        - Lower temperature (0.4) for more focused/conservative generation
+        - Smaller top_k (30) to reduce noise
+        - Shorter max_tokens to prevent divergence
+        - Better prompt engineering with React-specific context
         """
         print_step(f"Generating React component...")
         
-        # Enhanced prompt for component generation
-        component_prompt = f"React component for: {prompt}\n\nimport React"
+        # Enhanced prompt for component generation - more specific context
+        component_prompt = f"""import React, {{ useState }} from 'react';
+
+/**
+ * {prompt}
+ */
+const Component = () => {{"""
         
         # Encode prompt
         tokens = self.enc.encode(component_prompt)
         x = torch.tensor([tokens], dtype=torch.long, device=self.device)
         
         generated_code = component_prompt
+        bracket_count = 0
         
         with torch.no_grad():
             for token_idx in range(max_tokens):
@@ -204,10 +216,19 @@ class CodeGenerator:
                 logits = self.model(x[:, -self.config['block_size']:])
                 logits = logits[:, -1, :] / temperature
                 
-                # Top-k filtering
+                # Top-k filtering with more aggressive cutoff
                 if top_k is not None:
                     v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
                     logits[logits < v[:, [-1]]] = -float('Inf')
+                
+                # Add small penalty to tokens that break structure
+                bad_token_strs = ['undefined', 'null', '<|file_end|>']
+                for bad_str in bad_token_strs:
+                    try:
+                        bad_token = self.enc.encode(bad_str)[0]
+                        logits[0, bad_token] -= 1.0
+                    except:
+                        pass
                 
                 # Sample next token
                 probs = F.softmax(logits, dim=-1)
@@ -217,29 +238,38 @@ class CodeGenerator:
                 token_str = self.enc.decode([idx_next.item()])
                 generated_code += token_str
                 
+                # Track brackets to detect end of component
+                bracket_count += token_str.count('{') - token_str.count('}')
+                
                 # Append to sequence
                 x = torch.cat((x, idx_next), dim=1)
                 
                 # Stop conditions
-                if '<|file_end|>' in token_str or token_idx > max_tokens:
+                if '<|file_end|>' in token_str:
+                    break
+                if 'export default' in generated_code and bracket_count == 0:
                     break
         
         # Clean up generated code
         generated_code = generated_code.replace('<|file_end|>', '').strip()
         
+        # Ensure proper closing
+        if not generated_code.endswith(';'):
+            generated_code += ';\n'
+        
         # Validate generated code
         is_valid, error_messages = self.validate_react_component(generated_code)
         
         if is_valid:
-            print_success(f"Generated component ({len(generated_code)} chars)")
+            print_success(f"✨ Generated valid component ({len(generated_code)} chars)")
             return generated_code
         else:
             # Log the error for analysis
             error_str = "; ".join(error_messages)
             print_warning(f"Generated code failed validation: {error_str}")
-            print_warning("Logging error and using fallback template...")
+            print_warning("Using fallback template instead...")
             
-            # Save error log
+            # Save error log for analysis
             log_generation_error(prompt, generated_code, error_messages)
             
             # Use fallback

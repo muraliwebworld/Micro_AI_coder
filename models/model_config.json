@@ -1,11 +1,11 @@
 {
   "vocab_size": 100277,
-  "n_embd": 128,
-  "n_head": 4,
-  "n_layer": 8,
+  "n_embd": 480,
+  "n_head": 12,
+  "n_layer": 12,
   "block_size": 96,
   "tokenizer": "cl100k_base",
-  "total_params": 27269632,
-  "best_val_loss": 2.0617531061172487,
+  "total_params": 129565440,
+  "best_val_loss": 1.877529537677765,
   "training_iterations": 5000
 }

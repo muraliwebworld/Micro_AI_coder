@@ -8,7 +8,7 @@ import re
 from pathlib import Path
 from collections import Counter
 
-INPUT_JSONL = Path("/Users/muralidharanramasamy/Micro_AI_coder/datasets/data_ed7e68fb-44fe-47fc-b603-0279f2f8a7ca.jsonl")
+INPUT_JSONL = Path("/Users/muralidharanramasamy/Micro_AI_coder/datasets/data_cleaned_huggingface_new.jsonl")
 OUTPUT_JSONL = Path("/Users/muralidharanramasamy/Micro_AI_coder/datasets/data_cleaned_huggingface.jsonl")
 
 def is_valid_code(code):

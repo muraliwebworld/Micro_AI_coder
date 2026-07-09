@@ -18,7 +18,7 @@ from datetime import datetime
 DATASETS_DIR = Path(__file__).parent.parent / "datasets"
 MODELS_DIR = Path(__file__).parent.parent / "models"
 LOGS_DIR = Path(__file__).parent.parent / "logs"
-INPUT_JSONL = DATASETS_DIR / "data_cleaned_huggingface.jsonl" # Matches Phase 1
+INPUT_JSONL = DATASETS_DIR / "data_cleaned_huggingface_new.jsonl" # Matches Phase 1
 OUTPUT_MODEL = MODELS_DIR / "tiny_code_model.pt"
 OUTPUT_CONFIG = MODELS_DIR / "model_config.json"
 TRAINING_LOG = LOGS_DIR / "training_log.jsonl"
@@ -26,25 +26,30 @@ TRAINING_LOG = LOGS_DIR / "training_log.jsonl"
 MODELS_DIR.mkdir(parents=True, exist_ok=True)
 LOGS_DIR.mkdir(parents=True, exist_ok=True)
 
+   # n_embd=768,      # Increased from 512
+   # n_layer=12,      # Increased from 6
+   # n_head=12,       # Increased to match new embedding size
+   # vocab_size=50257
+
 # CPU-OPTIMIZED HYPERPARAMETERS (AGGRESSIVE ANTI-OVERFITTING)
-BATCH_SIZE = 2              # ⬇️  Even smaller (3 instead of 4) - tighter gradient updates
-BLOCK_SIZE = 96             # ⬇️  Shorter sequences (was 96) - less context corruption
-MAX_ITERS = 5000            # ⬇️  Half iterations (was 6000) - stop before overfitting
-LEARNING_RATE = 5e-4        # ⬇️  Lower LR (was 1e-3) - slower, more stable learning
-N_EMBD = 128                 # ⬇️  Smaller (was 128) - 25% smaller model
-N_HEAD = 4                  # ⬇️  Fewer heads (was 4) - less capacity
-N_LAYER = 8                 # ⬇️  Fewer layers (was 8) - lighter model
-DROPOUT = 0.15              # ⬆️  Much higher dropout (was 0.1) - 50% more regularization
-GRAD_CLIP = 0.3             # ⬇️  Tighter gradient clipping (was 0.5)
+BATCH_SIZE = 8              # ⬇️  Small batch for CPU
+BLOCK_SIZE = 96             # ⬇️  Shorter sequences
+MAX_ITERS = 5000            # ⬇️  REDUCED: Stop before divergence (was 5000)
+LEARNING_RATE = 1e-4        # ⬇️  Even LOWER LR (was 5e-4) - prevent late divergence
+N_EMBD = 480                # Embedding dimension
+N_HEAD = 12                  # Attention heads
+N_LAYER = 12                 # Transformer layers
+DROPOUT = 0.2               # ⬆️  INCREASED: More dropout (was 0.15) - better regularization
+GRAD_CLIP = 0.2             # ⬇️  TIGHTER: Stricter clipping (was 0.3) - prevent spikes
 TOKENIZER_NAME = "cl100k_base"
 DEVICE = 'cpu'
 
-# CPU Training improvements (MAXIMUM ANTI-OVERFITTING)
-EVAL_INTERVAL = 150         # ⬆️  Evaluate very frequently (every 250 steps)
-WARMUP_STEPS = 400          # ⬆️  Longer warmup (was 300) - better stability
-WEIGHT_DECAY = 0.02         # ⬆️  Double L2 regularization (was 0.01) - strong penalty
-SAVE_INTERVAL = 500         # ⬇️  Save even less frequently
-PATIENCE = 8       
+# CPU Training improvements (MAXIMUM ANTI-OVERFITTING + EARLY STOPPING)
+EVAL_INTERVAL = 500         # ⬆️  More frequent evaluation (was 150)
+WARMUP_STEPS = 500          # ⬆️  Longer warmup (was 400)
+WEIGHT_DECAY = 0.03         # ⬆️  STRONGER L2 (was 0.02)
+SAVE_INTERVAL = 500
+PATIENCE = 10                # ⬇️  STRICTER: Stop if no improvement for 6 evals (was 8)       
 
 # Hyperparameters
 # BATCH_SIZE = 8
@@ -267,6 +272,7 @@ def train():
     
     # Tracking
     best_val_loss = float('inf')
+    patience_counter = 0
     train_losses = []
     val_losses = []
     
@@ -314,19 +320,27 @@ def train():
             improvement = "↓" if val_loss < best_val_loss else "↑"
             print(f"Iter {iter+1:5d} | train_loss: {losses['train']:.4f} | val_loss: {val_loss:.4f} {improvement} | lr: {lr:.2e}")
             
-            # Save best model
+            # Save best model and reset patience
             if val_loss < best_val_loss:
                 best_val_loss = val_loss
+                patience_counter = 0
                 torch.save(model.state_dict(), OUTPUT_MODEL)
                 print(f"           ✅ New best model saved (val_loss: {val_loss:.4f})")
+            else:
+                patience_counter += 1
+                if patience_counter >= PATIENCE:
+                    print(f"\n⚠️  EARLY STOPPING: No improvement for {PATIENCE} evaluations")
+                    print(f"Best validation loss: {best_val_loss:.4f}")
+                    break
         
         # Regular checkpoints
         if (iter + 1) % SAVE_INTERVAL == 0 and (iter + 1) % EVAL_INTERVAL != 0:
             checkpoint_path = MODELS_DIR / f"checkpoint_iter_{iter+1}.pt"
             torch.save(model.state_dict(), checkpoint_path)
     
-    # Final model save
-    torch.save(model.state_dict(), OUTPUT_MODEL)
+    # Final model save - only if better than best (avoid overwriting good model)
+    # The best model is already saved during training, don't overwrite with worse final model
+    # torch.save(model.state_dict(), OUTPUT_MODEL)  # REMOVED: overwrites best model
     with open(OUTPUT_CONFIG, 'w') as f:
         json.dump({
             "vocab_size": vocab_size,
