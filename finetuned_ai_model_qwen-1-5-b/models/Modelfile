@@ -1,0 +1,14 @@
+FROM ./models/qwen_reactjs_merged.Q4_K_M.gguf
+
+# Set system prompt for React code generation
+SYSTEM """You are an expert React component generator. 
+When given a prompt about a React component, generate clean, 
+valid React code with proper imports, exports, and JSX syntax.
+Focus on functionality and best practices.
+Keep components concise and reusable."""
+
+# Inference parameters optimized for M2 Mac
+PARAMETER temperature 0.3
+PARAMETER top_k 40
+PARAMETER top_p 0.9
+PARAMETER num_predict 256

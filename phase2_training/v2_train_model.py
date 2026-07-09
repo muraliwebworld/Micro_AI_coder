@@ -33,7 +33,7 @@ LOGS_DIR.mkdir(parents=True, exist_ok=True)
 
 # CPU-OPTIMIZED HYPERPARAMETERS (AGGRESSIVE ANTI-OVERFITTING)
 BATCH_SIZE = 8              # ⬇️  Small batch for CPU
-BLOCK_SIZE = 96             # ⬇️  Shorter sequences
+BLOCK_SIZE = 256             # ⬇️  Shorter sequences
 MAX_ITERS = 5000            # ⬇️  REDUCED: Stop before divergence (was 5000)
 LEARNING_RATE = 1e-4        # ⬇️  Even LOWER LR (was 5e-4) - prevent late divergence
 N_EMBD = 480                # Embedding dimension
@@ -42,7 +42,7 @@ N_LAYER = 12                 # Transformer layers
 DROPOUT = 0.2               # ⬆️  INCREASED: More dropout (was 0.15) - better regularization
 GRAD_CLIP = 0.2             # ⬇️  TIGHTER: Stricter clipping (was 0.3) - prevent spikes
 TOKENIZER_NAME = "cl100k_base"
-DEVICE = 'cpu'
+DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 # CPU Training improvements (MAXIMUM ANTI-OVERFITTING + EARLY STOPPING)
 EVAL_INTERVAL = 500         # ⬆️  More frequent evaluation (was 150)
@@ -165,7 +165,7 @@ class TinyCodeModel(nn.Module):
         x = self.ln_f(x)
         return self.lm_head(x)
 
-    def generate(self, idx, max_new_tokens, temperature=1.0, top_k=None):
+    def generate(self, idx, max_new_tokens, temperature=1.0, top_k=40):
         for _ in range(max_new_tokens):
             idx_cond = idx[:, -self.block_size:]
             logits = self(idx_cond)
@@ -210,8 +210,26 @@ def load_and_tokenize():
     
     print(f"✅ Loaded {len(code_samples)} code samples")
     
+    # Prefer training on prompt -> code pairs when available so model learns conditioning.
+    examples = []
+    for entry in code_samples:
+        # If entry is already a concatenated string, keep it
+        if isinstance(entry, str):
+            examples.append(entry)
+            continue
+        # entry may be a dict with 'prompt' and 'code' (or 'response')
+        prompt = entry.get('prompt') if isinstance(entry, dict) else None
+        code = entry.get('code') or entry.get('response') if isinstance(entry, dict) else None
+        if prompt and code:
+            examples.append(prompt.strip() + "\n<|gen_code|>\n" + code.strip())
+        elif code:
+            examples.append(code.strip())
+        else:
+            # Fallback: stringify
+            examples.append(str(entry))
+
     # Concatenate with separator
-    text = "\n<|file_end|>\n".join(code_samples)
+    text = "\n<|file_end|>\n".join(examples)
     enc = tiktoken.get_encoding(TOKENIZER_NAME)
     data = torch.tensor(enc.encode(text), dtype=torch.long)
     
@@ -220,9 +238,19 @@ def load_and_tokenize():
 
 def get_batch(split, train_data, val_data):
     data_split = train_data if split == 'train' else val_data
-    # Safety check for small datasets
-    max_ix = max(1, len(data_split) - BLOCK_SIZE)
-    ix = torch.randint(max_ix, (BATCH_SIZE,))
+    # Safety check for small datasets: ensure we can sample full blocks
+    if len(data_split) < BLOCK_SIZE + 1:
+        # Repeat the data to create enough tokens for at least one batch
+        reps = (BLOCK_SIZE + 1) // max(1, len(data_split)) + 1
+        data_split = torch.cat([data_split] * reps)
+
+    max_ix = len(data_split) - BLOCK_SIZE - 1
+    # If max_ix <= 0, fall back to starting at 0
+    if max_ix <= 0:
+        ix = torch.zeros(BATCH_SIZE, dtype=torch.long)
+    else:
+        ix = torch.randint(0, max_ix, (BATCH_SIZE,))
+
     x = torch.stack([data_split[i:i+BLOCK_SIZE] for i in ix])
     y = torch.stack([data_split[i+1:i+BLOCK_SIZE+1] for i in ix])
     return x.to(DEVICE), y.to(DEVICE)

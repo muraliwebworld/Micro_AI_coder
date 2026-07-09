@@ -3,7 +3,7 @@
   "n_embd": 480,
   "n_head": 12,
   "n_layer": 12,
-  "block_size": 96,
+  "block_size": 256,
   "tokenizer": "cl100k_base",
   "total_params": 129565440,
   "best_val_loss": 1.877529537677765,

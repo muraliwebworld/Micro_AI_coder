@@ -1,0 +1,23 @@
+FROM qwen_1_5b_reactjs_merged.Q4_K_M.gguf
+
+# Set system prompt for React code generation
+SYSTEM """You are an expert React developer. Generate only clean, functional React component code. Include proper imports, exports, and JSX. Do not explain or add commentary."""
+
+# Temperature controls randomness
+PARAMETER temperature 0.3
+
+# Top-k sampling
+PARAMETER top_k 40
+
+# Top-p (nucleus) sampling
+PARAMETER top_p 0.9
+
+# Number of context tokens to keep
+PARAMETER num_ctx 2048
+
+# Temperature for model behavior
+PARAMETER num_predict 512
+
+# Stop sequences
+PARAMETER stop "```"
+PARAMETER stop "\n\n\n"
