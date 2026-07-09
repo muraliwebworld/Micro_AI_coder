@@ -20,6 +20,9 @@ from transformers import (
     BitsAndBytesConfig,
 )
 from peft import LoraConfig, get_peft_model
+from transformers.trainer_callback import TrainerCallback
+import psutil
+import os
 
 # Configuration
 MODEL_PATH = "Qwen/Qwen2.5-Coder-1.5B-Instruct"  # Update if using local model
@@ -28,14 +31,14 @@ OUTPUT_DIR = "./checkpoints"
 FINAL_MODEL_DIR = "./models/qwen_reactjs_merged"
 
 # Training Hyperparameters for 1.5B + 8GB RAM
-BATCH_SIZE = 1  # Critical for 8GB RAM
-GRADIENT_ACCUMULATION = 4  # Effective batch = 4
-MAX_LENGTH = 512  # React components fit comfortably
+BATCH_SIZE = 1  # MUST be 1 for 8GB RAM
+GRADIENT_ACCUMULATION = 8  # Increased from 4 (effective batch = 8, same throughput, lower peak memory)
+MAX_LENGTH = 256  # Reduced from 512 to save memory (still plenty for React)
 LEARNING_RATE = 5e-4  # Higher LR for smaller model
 EPOCHS = 2  # 2 epochs = ~5-6 hours total
 WARMUP_STEPS = 200
-SAVE_STEPS = 500
-EVAL_STEPS = 500
+SAVE_STEPS = 1000  # Increased to reduce checkpoint overhead
+EVAL_STEPS = 1000  # Increased to reduce eval overhead
 
 # LoRA Configuration for 1.5B
 LORA_R = 16  # Smaller rank for 1.5B
@@ -49,6 +52,29 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+
+class MemoryMonitorCallback(TrainerCallback):
+    """Monitor memory usage during training"""
+    def on_step_end(self, args, state, control, **kwargs):
+        if state.global_step % 50 == 0:  # Log every 50 steps
+            # Get process memory
+            process = psutil.Process(os.getpid())
+            mem_info = process.memory_info()
+            mem_mb = mem_info.rss / 1024 / 1024
+            
+            # Get system memory
+            virtual_memory = psutil.virtual_memory()
+            
+            logger.info(f"   Step {state.global_step}: Process RAM: {mem_mb:.0f}MB | "
+                       f"System: {virtual_memory.percent:.1f}% used ({virtual_memory.used/1e9:.1f}GB / {virtual_memory.total/1e9:.1f}GB)")
+            
+            # Clear cache if memory is high
+            if virtual_memory.percent > 85:
+                logger.warning(f"   ⚠️  Memory high ({virtual_memory.percent:.1f}%), clearing cache...")
+                if torch.backends.mps.is_available():
+                    torch.mps.empty_cache()
+
 
 
 def setup_device():
@@ -216,9 +242,20 @@ def train_model(model, tokenizer, train_dataset, val_dataset):
     logger.info(f"   Batch size: {BATCH_SIZE}")
     logger.info(f"   Gradient accumulation: {GRADIENT_ACCUMULATION}")
     logger.info(f"   Effective batch size: {BATCH_SIZE * GRADIENT_ACCUMULATION}")
+    logger.info(f"   Max sequence length: {MAX_LENGTH} (reduced from 512 to save memory)")
     logger.info(f"   Learning rate: {LEARNING_RATE}")
+    logger.info(f"   Optimizer: adafactor (memory-efficient)")
     logger.info(f"   Epochs: {EPOCHS}")
-    logger.info(f"   Expected time: 4-6 hours (M2 GPU)\n")
+    logger.info(f"   Expected time: 5-7 hours (M2 GPU, lower peak memory)\n")
+    
+    # Monitor memory
+    if torch.cuda.is_available():
+        logger.info(f"   GPU memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB")
+    
+    # Clear cache before training
+    if torch.backends.mps.is_available():
+        torch.mps.empty_cache()
+    logger.info("   Cache cleared, ready to start training")
     
     # Create output directory
     os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -228,21 +265,23 @@ def train_model(model, tokenizer, train_dataset, val_dataset):
         output_dir=OUTPUT_DIR,
         num_train_epochs=EPOCHS,
         per_device_train_batch_size=BATCH_SIZE,
-        per_device_eval_batch_size=BATCH_SIZE,
+        per_device_eval_batch_size=1,  # Minimum for eval
         gradient_accumulation_steps=GRADIENT_ACCUMULATION,
         warmup_steps=WARMUP_STEPS,
         weight_decay=0.01,
-        logging_steps=100,
-        eval_strategy="steps",
-        eval_steps=EVAL_STEPS,
-        save_strategy="steps",
-        save_steps=SAVE_STEPS,
-        load_best_model_at_end=True,
+        logging_steps=50,  # Log more frequently to prevent OOM buildup
+        eval_strategy="no",  # Disable frequent eval to save memory (only eval at end)
+        save_strategy="epoch",  # Save only at epoch end
+        load_best_model_at_end=False,  # Don't load best to save memory
         learning_rate=LEARNING_RATE,
         fp16=True,  # Metal GPU friendly
         gradient_checkpointing=True,  # Save memory
+        optim="adafactor",  # Memory-efficient optimizer (uses less RAM than AdamW)
+        optim_target_modules=[".*q_proj", ".*v_proj"],  # Only optimize LoRA modules
         logging_dir="./logs",
-        logging_first_step=True,
+        logging_first_step=False,
+        max_grad_norm=0.5,  # Lower gradient norm to prevent memory spikes
+        remove_unused_columns=False,  # Prevent extra processing
     )
     
     # Data collator
@@ -255,6 +294,7 @@ def train_model(model, tokenizer, train_dataset, val_dataset):
         train_dataset=train_dataset,
         eval_dataset=val_dataset,
         data_collator=data_collator,
+        callbacks=[MemoryMonitorCallback()],  # Monitor memory every 50 steps
     )
     
     # Start training
